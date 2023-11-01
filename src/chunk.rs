@@ -34,10 +34,6 @@ impl Chunk {
         let instruction = &self.code[offset];
         match instruction {
             OpCode::OpReturn => Chunk::simple_instruction("OP_RETURN", offset),
-            _ => {
-                println!("Unknown opcode {:?}\n", instruction);
-                offset + 1
-            }
         }
     }
 
