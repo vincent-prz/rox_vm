@@ -7,6 +7,12 @@ pub enum OpCode {
     OpReturn,
 }
 
+impl OpCode {
+    pub fn new(byte: u8) -> Self {
+        byte.try_into().expect("Could not decode byte")
+    }
+}
+
 // allows cast from u8 to OpCode
 impl TryFrom<u8> for OpCode {
     type Error = ();
@@ -49,6 +55,14 @@ impl Chunk {
         (self.constants.len() - 1)
             .try_into()
             .expect("Constant index didn't fit in byte")
+    }
+
+    pub fn read_byte(&self, offset: usize) -> u8 {
+        self.code[offset]
+    }
+
+    pub fn read_constant(&self, address: u8) -> Value {
+        self.constants[address as usize]
     }
 }
 
@@ -116,7 +130,7 @@ impl Chunk {
             print!("{} ", current_lineno);
         }
 
-        let instruction: &OpCode = &self.code[offset].try_into().expect("Could not decode byte");
+        let instruction: &OpCode = &OpCode::new(self.read_byte(offset));
         match instruction {
             OpCode::OpReturn => self.simple_instruction("OP_RETURN", offset),
             OpCode::OpConstant => self.constant_instruction("OP_CONSTANT", offset),
