@@ -8,6 +8,5 @@ fn main() {
     chunk.write(OpCode::OpConstant as u8, 123);
     chunk.write(constant, 123);
     chunk.write(OpCode::OpReturn as u8, 123);
-    chunk.disassemble("test chunk");
     vm.interpret(&chunk);
 }

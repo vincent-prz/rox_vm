@@ -9,6 +9,7 @@ pub enum OpCode {
 
 impl OpCode {
     pub fn new(byte: u8) -> Self {
+        // [perf] - try_into might incurr an avoidable perf penalty
         byte.try_into().expect("Could not decode byte")
     }
 }
@@ -121,7 +122,7 @@ impl Chunk {
             offset = self.disassemble_instruction(offset);
         }
     }
-    fn disassemble_instruction(&self, offset: usize) -> usize {
+    pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{:04} ", offset);
         let current_lineno = self.line_info.get_lineno(offset).unwrap();
         if offset > 0 && current_lineno == self.line_info.get_lineno(offset - 1).unwrap() {
