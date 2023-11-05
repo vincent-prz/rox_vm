@@ -6,11 +6,17 @@ pub struct VM<'a> {
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
+    // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
+    stack: Vec<Value>,
 }
 
 impl<'a> VM<'a> {
     pub fn new() -> Self {
-        VM { chunk: None, ip: 0 }
+        VM {
+            chunk: None,
+            ip: 0,
+            stack: Vec::new(),
+        }
     }
 
     pub fn interpret(&mut self, chunk: &'a Chunk) -> InterpretResult {
@@ -21,18 +27,27 @@ impl<'a> VM<'a> {
 
     fn run(&mut self) -> InterpretResult {
         loop {
-            #[cfg(feature="debugTraceExecution")] {
+            #[cfg(feature = "debugTraceExecution")]
+            {
+                print!("          ");
+                for value in &self.stack {
+                    print!("[ ");
+                    print_value(*value);
+                    print!(" ]");
+                }
+                println!("");
                 self.unwrap_chunk().disassemble_instruction(self.ip);
             }
             let instruction = OpCode::new(self.read_byte());
             match instruction {
                 OpCode::OpReturn => {
+                    print_value(self.pop().expect("Could not pop constant on return"));
+                    println!("");
                     return InterpretResult::InterpretOk;
                 }
                 OpCode::OpConstant => {
                     let constant = self.read_constant();
-                    print_value(constant);
-                    println!("");
+                    self.push(constant);
                 }
             }
         }
@@ -53,6 +68,14 @@ impl<'a> VM<'a> {
     fn read_constant(&mut self) -> Value {
         let byte = self.read_byte();
         self.unwrap_chunk().read_constant(byte)
+    }
+
+    fn push(&mut self, value: Value) {
+        self.stack.push(value);
+    }
+
+    fn pop(&mut self) -> Option<Value> {
+        self.stack.pop()
     }
 }
 

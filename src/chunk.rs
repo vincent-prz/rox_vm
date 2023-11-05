@@ -128,7 +128,7 @@ impl Chunk {
         if offset > 0 && current_lineno == self.line_info.get_lineno(offset - 1).unwrap() {
             print!("   | ");
         } else {
-            print!("{} ", current_lineno);
+            print!("{:4} ", current_lineno);
         }
 
         let instruction: &OpCode = &OpCode::new(self.read_byte(offset));
