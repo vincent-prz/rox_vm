@@ -10,6 +10,13 @@ pub struct VM<'a> {
     stack: Vec<Value>,
 }
 
+macro_rules! binary_op {
+    ($self:expr, $op:expr) => {{
+        let b = $self.pop();
+        let a = $self.pop();
+        $self.push($op(a, b));
+    }};
+}
 impl<'a> VM<'a> {
     pub fn new() -> Self {
         VM {
@@ -40,14 +47,22 @@ impl<'a> VM<'a> {
             }
             let instruction = OpCode::new(self.read_byte());
             match instruction {
-                OpCode::OpReturn => {
-                    print_value(self.pop().expect("Could not pop constant on return"));
-                    println!("");
-                    return InterpretResult::InterpretOk;
-                }
                 OpCode::OpConstant => {
                     let constant = self.read_constant();
                     self.push(constant);
+                }
+                OpCode::OpNegate => {
+                    let value = self.pop();
+                    self.push(-value);
+                }
+                OpCode::OpAdd => binary_op!(self, |x: Value, y: Value| -> Value { x + y }),
+                OpCode::OpSubtract => binary_op!(self, |x: Value, y: Value| -> Value { x - y }),
+                OpCode::OpMultiply => binary_op!(self, |x: Value, y: Value| -> Value { x * y }),
+                OpCode::OpDivide => binary_op!(self, |x: Value, y: Value| -> Value { x / y }),
+                OpCode::OpReturn => {
+                    print_value(self.pop());
+                    println!("");
+                    return InterpretResult::InterpretOk;
                 }
             }
         }
@@ -74,8 +89,8 @@ impl<'a> VM<'a> {
         self.stack.push(value);
     }
 
-    fn pop(&mut self) -> Option<Value> {
-        self.stack.pop()
+    fn pop(&mut self) -> Value {
+        self.stack.pop().expect("Tried to pop on empty stack")
     }
 }
 

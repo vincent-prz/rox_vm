@@ -4,6 +4,11 @@ use std::convert::TryFrom;
 #[derive(Debug)]
 pub enum OpCode {
     OpConstant,
+    OpAdd,
+    OpSubtract,
+    OpMultiply,
+    OpDivide,
+    OpNegate,
     OpReturn,
 }
 
@@ -21,6 +26,11 @@ impl TryFrom<u8> for OpCode {
     fn try_from(v: u8) -> Result<Self, Self::Error> {
         match v {
             x if x == OpCode::OpConstant as u8 => Ok(OpCode::OpConstant),
+            x if x == OpCode::OpAdd as u8 => Ok(OpCode::OpAdd),
+            x if x == OpCode::OpSubtract as u8 => Ok(OpCode::OpSubtract),
+            x if x == OpCode::OpMultiply as u8 => Ok(OpCode::OpMultiply),
+            x if x == OpCode::OpDivide as u8 => Ok(OpCode::OpDivide),
+            x if x == OpCode::OpNegate as u8 => Ok(OpCode::OpNegate),
             x if x == OpCode::OpReturn as u8 => Ok(OpCode::OpReturn),
             _ => Err(()),
         }
@@ -134,6 +144,11 @@ impl Chunk {
         let instruction: &OpCode = &OpCode::new(self.read_byte(offset));
         match instruction {
             OpCode::OpReturn => self.simple_instruction("OP_RETURN", offset),
+            OpCode::OpAdd => self.simple_instruction("OP_ADD", offset),
+            OpCode::OpSubtract => self.simple_instruction("OP_SUBTRACT", offset),
+            OpCode::OpMultiply => self.simple_instruction("OP_MULTIPLY", offset),
+            OpCode::OpDivide => self.simple_instruction("OP_DIVIDE", offset),
+            OpCode::OpNegate => self.simple_instruction("OP_NEGATE", offset),
             OpCode::OpConstant => self.constant_instruction("OP_CONSTANT", offset),
         }
     }
