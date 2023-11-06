@@ -10,7 +10,7 @@ fn main() {
     chunk.write(constant, 123);
     chunk.write(OpCode::OpConstant as u8, 123);
     chunk.write(constant2, 123);
-    chunk.write(OpCode::OpSubtract as u8, 123);
+    chunk.write(OpCode::OpDivide as u8, 123);
     chunk.write(OpCode::OpReturn as u8, 123);
     vm.interpret(&chunk);
 }

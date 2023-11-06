@@ -11,10 +11,10 @@ pub struct VM<'a> {
 }
 
 macro_rules! binary_op {
-    ($self:expr, $op:expr) => {{
+    ($self:expr, $op:tt) => {{
         let b = $self.pop();
         let a = $self.pop();
-        $self.push($op(a, b));
+        $self.push(a $op b);
     }};
 }
 impl<'a> VM<'a> {
@@ -55,10 +55,10 @@ impl<'a> VM<'a> {
                     let value = self.pop();
                     self.push(-value);
                 }
-                OpCode::OpAdd => binary_op!(self, |x: Value, y: Value| -> Value { x + y }),
-                OpCode::OpSubtract => binary_op!(self, |x: Value, y: Value| -> Value { x - y }),
-                OpCode::OpMultiply => binary_op!(self, |x: Value, y: Value| -> Value { x * y }),
-                OpCode::OpDivide => binary_op!(self, |x: Value, y: Value| -> Value { x / y }),
+                OpCode::OpAdd => binary_op!(self, +),
+                OpCode::OpSubtract => binary_op!(self, -),
+                OpCode::OpMultiply => binary_op!(self, *),
+                OpCode::OpDivide => binary_op!(self, /),
                 OpCode::OpReturn => {
                     print_value(self.pop());
                     println!("");
