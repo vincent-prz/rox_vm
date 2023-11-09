@@ -27,12 +27,12 @@ fn run_file(filename: &str) {
         Err(InterpretError::InterpretCompileError(err)) => {
             println!("{}", err);
             exit(65);
-        } ,
+        }
         Err(InterpretError::InterpretRuntimeError) => {
             // TODO: proper error message
             println!("Runtime error");
             exit(70);
-        } ,
-        Ok(()) => {},
+        }
+        Ok(()) => {}
     }
 }

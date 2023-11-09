@@ -1,5 +1,5 @@
-use crate::compiler::compile;
 use crate::chunk::{Chunk, OpCode};
+use crate::compiler::compile;
 use crate::value::{print_value, Value};
 
 pub struct VM {

@@ -1,5 +1,5 @@
-use crate::scanner::Scanner;
 use crate::chunk::Chunk;
+use crate::scanner::Scanner;
 
 // FIXME: proper error handling
 pub fn compile(source: String) -> Result<Chunk, String> {
