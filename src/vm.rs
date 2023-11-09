@@ -1,8 +1,9 @@
+use crate::compiler::compile;
 use crate::chunk::{Chunk, OpCode};
 use crate::value::{print_value, Value};
 
-pub struct VM<'a> {
-    chunk: Option<&'a Chunk>,
+pub struct VM {
+    chunk: Option<Chunk>,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
@@ -17,7 +18,7 @@ macro_rules! binary_op {
         $self.push(a $op b);
     }};
 }
-impl<'a> VM<'a> {
+impl VM {
     pub fn new() -> Self {
         VM {
             chunk: None,
@@ -26,13 +27,18 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn interpret(&mut self, chunk: &'a Chunk) -> InterpretResult {
-        self.chunk = Some(chunk);
-        self.ip = 0;
-        self.run()
+    pub fn interpret(&mut self, source: String) -> Result<(), InterpretError> {
+        match compile(source) {
+            Ok(chunk) => {
+                self.chunk = Some(chunk);
+                self.ip = 0;
+                self.run()
+            }
+            Err(msg) => Err(InterpretError::InterpretCompileError(msg)),
+        }
     }
 
-    fn run(&mut self) -> InterpretResult {
+    fn run(&mut self) -> Result<(), InterpretError> {
         loop {
             #[cfg(feature = "debugTraceExecution")]
             {
@@ -62,7 +68,7 @@ impl<'a> VM<'a> {
                 OpCode::OpReturn => {
                     print_value(self.pop());
                     println!("");
-                    return InterpretResult::InterpretOk;
+                    return Ok(());
                 }
             }
         }
@@ -71,7 +77,7 @@ impl<'a> VM<'a> {
     /// helper to avoid dealing with Option. This should be safe to call within
     /// the context of an interpret run.
     fn unwrap_chunk(&self) -> &Chunk {
-        self.chunk.expect("Expected chunk to be set")
+        self.chunk.as_ref().expect("Expected chunk to be set")
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -94,8 +100,7 @@ impl<'a> VM<'a> {
     }
 }
 
-pub enum InterpretResult {
-    InterpretOk,
-    InterpretCompileError,
+pub enum InterpretError {
+    InterpretCompileError(String),
     InterpretRuntimeError,
 }
