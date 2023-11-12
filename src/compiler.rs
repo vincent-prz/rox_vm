@@ -1,7 +1,6 @@
+use crate::ast::Program;
 use crate::chunk::Chunk;
-use crate::token::Token;
 
-// FIXME: proper error handling
-pub fn compile(tokens: Vec<Token>) -> Result<Chunk, String> {
+pub fn compile(program_ast: Program) -> Result<Chunk, String> {
     todo!()
 }

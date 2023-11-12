@@ -1,9 +1,12 @@
+use rox::ast::parser::Parser;
 use rox::compiler::compile;
 use rox::scanner::Scanner;
 use rox::vm::InterpretError;
 use rox::vm::VM;
 use std::env;
 use std::fs;
+use std::io;
+use std::io::Write;
 use std::process::exit;
 
 fn main() {
@@ -19,7 +22,20 @@ fn main() {
 }
 
 fn repl() {
-    todo!()
+    loop {
+        print!("> ");
+        io::stdout()
+            .flush()
+            .expect("Somethig went wrong when flushing IO");
+        let mut line = String::new();
+        io::stdin()
+            .read_line(&mut line)
+            .expect("Something went wrong when reading the line");
+        if line == "\n" {
+            break;
+        }
+        run(line);
+    }
 }
 
 fn run_file(filename: &str) {
@@ -27,20 +43,34 @@ fn run_file(filename: &str) {
     run(contents);
 }
 
+/// source processing pipeline
+/// 1. scan
+/// 2. parse
+/// 3. compile to bytecode chunk
+/// 4. vm execs bytecode chunk
 fn run(source: String) {
+    // FIXME: proper error handling
     let scanner = Scanner::new(source);
     let tokens = scanner.scan_tokens();
     if let Err(errors) = tokens {
-        // FIXME: proper error handling
         let str_errors = errors.iter().map(|err| format!("{:?}", err));
         println!("{}", str_errors.collect::<Vec<String>>().join("\n"));
         exit(65);
     }
-    let chunk = compile(tokens.expect("Expected successful scan"));
+
+    let mut parser = Parser::new(tokens.expect("Expected successful scan"));
+    let program_ast = parser.parse();
+    if let Err(error) = program_ast {
+        println!("{:?}", error);
+        exit(65);
+    }
+
+    let chunk = compile(program_ast.expect("Expected successful parse"));
     if let Err(err) = chunk {
         println!("{}", err);
         exit(65);
     }
+
     let mut vm = VM::new();
     match vm.interpret(chunk.expect("Expected successful compilation")) {
         Err(InterpretError::InterpretRuntimeError) => {
