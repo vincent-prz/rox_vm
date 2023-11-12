@@ -1,5 +1,6 @@
 use rox::ast::parser::Parser;
-use rox::compiler::compile;
+use rox::chunk::Chunk;
+use rox::compiler::Compiler;
 use rox::scanner::Scanner;
 use rox::vm::InterpretError;
 use rox::vm::VM;
@@ -65,16 +66,17 @@ fn run(source: String) {
         exit(65);
     }
 
-    let chunk = compile(program_ast.expect("Expected successful parse"));
-    if let Err(err) = chunk {
+    let mut chunk = Chunk::new();
+    let mut compiler = Compiler::new(&mut chunk);
+    let compilation_result = compiler.run(program_ast.expect("Expected successful parse"));
+    if let Err(err) = compilation_result {
         println!("{}", err);
         exit(65);
     }
 
     let mut vm = VM::new();
-    match vm.interpret(chunk.expect("Expected successful compilation")) {
+    match vm.interpret(chunk) {
         Err(InterpretError::InterpretRuntimeError) => {
-            // TODO: proper error message
             println!("Runtime error");
             exit(70);
         }

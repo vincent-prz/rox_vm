@@ -25,8 +25,16 @@ pub struct LetDecl {
     pub initializer: Option<Expr>,
 }
 
+// with have 2 types for statements. Statement being the container with a Token
+// this is useful to track line numbers.
 #[derive(Debug, PartialEq, Clone)]
-pub enum Statement {
+pub struct Statement {
+    pub token: Token,
+    pub statement: InnerStatement,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum InnerStatement {
     ExprStmt(Expr),
     IfStmt(IfStmt),
     PrintStmt(Expr),
@@ -249,6 +257,7 @@ fn test_pretty_printer() {
 pub mod parser {
     use super::*;
 
+    // FIXME update this
     /*
     program        → declaration* EOF ;
     declaration    → classDecl | funDecl | varDecl | statement ;
@@ -438,10 +447,10 @@ pub mod parser {
         }
 
         fn statement(&mut self) -> Result<Statement, ParseError> {
-            let token = self.peek();
-            match &token.typ {
-                If => Ok(Statement::IfStmt(self.if_stmt()?)),
-                While => Ok(Statement::WhileStmt(self.while_stmt()?)),
+            let token = self.peek().clone();
+            let inner_stmt = match &token.typ {
+                If => Ok(InnerStatement::IfStmt(self.if_stmt()?)),
+                While => Ok(InnerStatement::WhileStmt(self.while_stmt()?)),
                 // desugaring a for statement into while
                 For => self.for_stmt(),
                 Return => {
@@ -452,20 +461,24 @@ pub mod parser {
                         Some(self.expression()?)
                     };
                     self.consume(&Semicolon, "Expect ';' after return value.")?;
-                    Ok(Statement::ReturnStmt(ReturnStmt { token, expr }))
+                    Ok(InnerStatement::ReturnStmt(ReturnStmt { token, expr }))
                 }
                 LeftBrace => {
                     self.advance(); // discard left brace
-                    Ok(Statement::Block(self.block()?))
+                    Ok(InnerStatement::Block(self.block()?))
                 }
                 _ => self.expr_statement(),
-            }
+            };
+            inner_stmt.map(|statement| Statement {
+                token: token.clone(),
+                statement,
+            })
         }
 
-        fn expr_statement(&mut self) -> Result<Statement, ParseError> {
+        fn expr_statement(&mut self) -> Result<InnerStatement, ParseError> {
             let expr = self.expression()?;
             self.consume(&Semicolon, "Expect ';' after expression.")?;
-            Ok(Statement::ExprStmt(expr))
+            Ok(InnerStatement::ExprStmt(expr))
         }
 
         fn if_stmt(&mut self) -> Result<IfStmt, ParseError> {
@@ -501,17 +514,22 @@ pub mod parser {
             })
         }
 
-        fn for_stmt(&mut self) -> Result<Statement, ParseError> {
+        fn for_stmt(&mut self) -> Result<InnerStatement, ParseError> {
             self.advance(); // discard for token
             self.consume(&LeftParen, "Expect '(' after for.")?;
-            let token = self.peek();
+            let token = self.peek().clone();
             let initializer = match &token.typ {
                 Semicolon => {
                     self.advance(); // discard semi colon
                     None
                 }
                 Let => Some(self.let_decl()?).map(Declaration::LetDecl),
-                _ => Some(Declaration::Statement(self.expr_statement()?)),
+                _ => Some(Declaration::Statement(self.expr_statement().map(
+                    |statement| Statement {
+                        token: token.clone(),
+                        statement,
+                    },
+                )?)),
             };
             let condition = match self.peek().typ {
                 Semicolon => None,
@@ -527,10 +545,19 @@ pub mod parser {
 
             let full_body = match increment {
                 None => body,
-                Some(incr) => Statement::Block(vec![
-                    Declaration::Statement(body),
-                    Declaration::Statement(Statement::ExprStmt(incr)),
-                ]),
+                Some(incr) => {
+                    let inner_stmt = InnerStatement::Block(vec![
+                        Declaration::Statement(body),
+                        Declaration::Statement(Statement {
+                            token: token.clone(),
+                            statement: InnerStatement::ExprStmt(incr),
+                        }),
+                    ]);
+                    Statement {
+                        token: token.clone(),
+                        statement: inner_stmt,
+                    }
+                }
             };
 
             let while_stmt = WhileStmt {
@@ -541,10 +568,13 @@ pub mod parser {
                 body: Box::new(full_body),
             };
             Ok(match initializer {
-                None => Statement::WhileStmt(while_stmt),
-                Some(var_decl) => Statement::Block(vec![
+                None => InnerStatement::WhileStmt(while_stmt),
+                Some(var_decl) => InnerStatement::Block(vec![
                     var_decl,
-                    Declaration::Statement(Statement::WhileStmt(while_stmt)),
+                    Declaration::Statement(Statement {
+                        token: token.clone(),
+                        statement: InnerStatement::WhileStmt(while_stmt),
+                    }),
                 ]),
             })
         }
