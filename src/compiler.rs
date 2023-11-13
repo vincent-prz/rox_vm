@@ -19,6 +19,10 @@ impl<'a> Compiler<'a> {
         for decl in program_ast.declarations {
             self.declaration(decl)?;
         }
+        #[cfg(feature = "debugPrintCode")]
+        {
+            self.current_chunk.disassemble("code");
+        }
         Ok(())
     }
 
@@ -75,7 +79,9 @@ impl<'a> Compiler<'a> {
     fn unary(&mut self, op: Unary) -> Result<(), String> {
         match op.operator.typ {
             TokenType::Minus => {
+                self.expression(*op.right)?;
                 self.emit_byte(OpCode::OpNegate as u8);
+
                 Ok(())
             }
             _ => Err(format!(
