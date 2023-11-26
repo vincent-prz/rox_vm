@@ -1,5 +1,14 @@
-pub type Value = f64;
+use std::fmt;
 
-pub fn print_value(value: Value) {
-    print!("{}", value);
+#[derive(Copy, Clone)]
+pub enum Value {
+    Number(f64),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Number(n) => write!(f, "{}", n),
+        }
+    }
 }

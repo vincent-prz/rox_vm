@@ -1,4 +1,4 @@
-use crate::value::{print_value, Value};
+use crate::value::Value;
 use std::convert::TryFrom;
 
 #[derive(Debug)]
@@ -161,7 +161,7 @@ impl Chunk {
     fn constant_instruction(&self, name: &str, offset: usize) -> usize {
         let constant_addr = self.code[offset + 1];
         print!("{:<16} {} '", name, constant_addr);
-        print_value(self.constants[constant_addr as usize]);
+        print!("{}", self.constants[constant_addr as usize]);
         println!("'");
         offset + 2
     }

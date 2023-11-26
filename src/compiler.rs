@@ -1,6 +1,7 @@
 use crate::ast::{Binary, Declaration, Expr, InnerStatement, Literal, Program, Statement, Unary};
 use crate::chunk::{Chunk, OpCode};
 use crate::token::TokenType;
+use crate::value::Value;
 
 pub struct Compiler<'a> {
     current_line: u16,
@@ -64,7 +65,7 @@ impl<'a> Compiler<'a> {
     fn literal(&mut self, literal: Literal) -> Result<(), String> {
         match literal {
             Literal::Number(number) => {
-                let constant = self.current_chunk.add_constant(number);
+                let constant = self.current_chunk.add_constant(Value::Number(number));
                 self.emit_byte(OpCode::OpConstant as u8);
                 self.emit_byte(constant);
             }

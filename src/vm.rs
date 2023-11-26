@@ -1,5 +1,5 @@
 use crate::chunk::{Chunk, OpCode};
-use crate::value::{print_value, Value};
+use crate::value::Value;
 
 pub struct VM {
     chunk: Option<Chunk>,
@@ -14,7 +14,11 @@ macro_rules! binary_op {
     ($self:expr, $op:tt) => {{
         let b = $self.pop();
         let a = $self.pop();
-        $self.push(a $op b);
+        match (a, b) {
+            (Value::Number(x), Value::Number(y)) => {
+                $self.push(Value::Number(x $op y));
+            }
+        }
     }};
 }
 impl VM {
@@ -53,14 +57,16 @@ impl VM {
                 }
                 OpCode::OpNegate => {
                     let value = self.pop();
-                    self.push(-value);
+                    match value {
+                        Value::Number(number) => self.push(Value::Number(-number)),
+                    }
                 }
                 OpCode::OpAdd => binary_op!(self, +),
                 OpCode::OpSubtract => binary_op!(self, -),
                 OpCode::OpMultiply => binary_op!(self, *),
                 OpCode::OpDivide => binary_op!(self, /),
                 OpCode::OpReturn => {
-                    print_value(self.pop());
+                    print!("{}", self.pop());
                     println!("");
                     return Ok(());
                 }
