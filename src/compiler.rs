@@ -40,7 +40,7 @@ impl<'a> Compiler<'a> {
             InnerStatement::ExprStmt(expr) => self.expression(expr),
             InnerStatement::IfStmt(_) => todo!(),
             InnerStatement::PrintStmt(_) => todo!(),
-            InnerStatement::ReturnStmt(_) => todo!(),
+            InnerStatement::ReturnStmt(_) => self.return_statement(),
             InnerStatement::WhileStmt(_) => todo!(),
             InnerStatement::Block(_) => todo!(),
         }
@@ -89,6 +89,11 @@ impl<'a> Compiler<'a> {
                 op.operator.lexeme, op.operator.line
             )),
         }
+    }
+
+    fn return_statement(&mut self) -> Result<(), String> {
+        self.emit_byte(OpCode::OpReturn as u8);
+        Ok(())
     }
 
     fn emit_byte(&mut self, byte: u8) {
