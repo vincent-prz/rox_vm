@@ -35,6 +35,12 @@ fn repl() {
         if line == "\n" {
             break;
         }
+        if !line.ends_with(";\n") {
+            line.insert(line.len() - 1, ';')
+        }
+        // a return statement is necessary at the moment for the interpreter to work
+        line.push_str("return;\n");
+
         run(line);
     }
 }
