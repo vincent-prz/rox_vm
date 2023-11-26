@@ -1,4 +1,4 @@
-use crate::ast::{Declaration, Expr, InnerStatement, Literal, Program, Statement, Unary};
+use crate::ast::{Binary, Declaration, Expr, InnerStatement, Literal, Program, Statement, Unary};
 use crate::chunk::{Chunk, OpCode};
 use crate::token::TokenType;
 
@@ -50,9 +50,9 @@ impl<'a> Compiler<'a> {
         match expr {
             Expr::Literal(literal) => self.literal(literal),
             Expr::Unary(op) => self.unary(op),
-            Expr::Binary(_) => todo!(),
+            Expr::Binary(op) => self.binary(op),
             Expr::Call(_) => todo!(),
-            Expr::Grouping(_) => todo!(),
+            Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(_) => todo!(),
             Expr::Assignment(_) => todo!(),
             Expr::Logical(_) => todo!(),
@@ -81,7 +81,6 @@ impl<'a> Compiler<'a> {
             TokenType::Minus => {
                 self.expression(*op.right)?;
                 self.emit_byte(OpCode::OpNegate as u8);
-
                 Ok(())
             }
             _ => Err(format!(
@@ -89,6 +88,23 @@ impl<'a> Compiler<'a> {
                 op.operator.lexeme, op.operator.line
             )),
         }
+    }
+
+    fn binary(&mut self, op: Binary) -> Result<(), String> {
+        self.expression(*op.left)?;
+        self.expression(*op.right)?;
+        let op_code = match op.operator.typ {
+            TokenType::Minus => OpCode::OpSubtract,
+            TokenType::Plus => OpCode::OpAdd,
+            TokenType::Slash => OpCode::OpDivide,
+            TokenType::Star => OpCode::OpMultiply,
+            _ => Err(format!(
+                "Unexpected binary operator: {} at line {}",
+                op.operator.lexeme, op.operator.line
+            ))?,
+        };
+        self.emit_byte(op_code as u8);
+        Ok(())
     }
 
     fn return_statement(&mut self) -> Result<(), String> {
