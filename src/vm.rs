@@ -17,6 +17,11 @@ macro_rules! binary_op {
         match (a, b) {
             (Value::Number(x), Value::Number(y)) => {
                 $self.push(Value::Number(x $op y));
+            },
+            _ => {
+                Err(InterpretError {
+                    msg: "Operands must be numbers".to_string(),
+                })?;
             }
         }
     }};
@@ -59,6 +64,9 @@ impl VM {
                     let value = self.pop();
                     match value {
                         Value::Number(number) => self.push(Value::Number(-number)),
+                        _ => Err(InterpretError {
+                            msg: "Operand must be a number".to_string(),
+                        })?,
                     }
                 }
                 OpCode::OpAdd => binary_op!(self, +),
@@ -100,6 +108,6 @@ impl VM {
     }
 }
 
-pub enum InterpretError {
-    InterpretRuntimeError,
+pub struct InterpretError {
+    msg: String,
 }

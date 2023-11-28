@@ -82,7 +82,7 @@ fn run(source: String) {
 
     let mut vm = VM::new();
     match vm.interpret(chunk) {
-        Err(InterpretError::InterpretRuntimeError) => {
+        Err(_) => {
             println!("Runtime error");
             exit(70);
         }
