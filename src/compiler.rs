@@ -1,4 +1,6 @@
-use crate::ast::{Binary, Declaration, Expr, InnerStatement, Literal, Program, Statement, Unary};
+use crate::ast::{
+    Binary, Declaration, Expr, InnerStatement, Literal, Logical, Program, Statement, Unary,
+};
 use crate::chunk::{Chunk, OpCode};
 use crate::token::TokenType;
 use crate::value::Value;
@@ -56,7 +58,7 @@ impl<'a> Compiler<'a> {
             Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(_) => todo!(),
             Expr::Assignment(_) => todo!(),
-            Expr::Logical(_) => todo!(),
+            Expr::Logical(logical) => self.logical(logical),
             Expr::Get(_) => todo!(),
             Expr::Set(_) => todo!(),
         }
@@ -70,8 +72,8 @@ impl<'a> Compiler<'a> {
                 self.emit_byte(constant);
             }
             Literal::Str(_) => todo!(),
-            Literal::True => todo!(),
-            Literal::False => todo!(),
+            Literal::True => self.emit_byte(OpCode::OpTrue as u8),
+            Literal::False => self.emit_byte(OpCode::OpFalse as u8),
             Literal::Null => todo!(),
         }
         Ok(())
@@ -82,6 +84,11 @@ impl<'a> Compiler<'a> {
             TokenType::Minus => {
                 self.expression(*op.right)?;
                 self.emit_byte(OpCode::OpNegate as u8);
+                Ok(())
+            }
+            TokenType::Not => {
+                self.expression(*op.right)?;
+                self.emit_byte(OpCode::OpNot as u8);
                 Ok(())
             }
             _ => Err(format!(
@@ -101,6 +108,21 @@ impl<'a> Compiler<'a> {
             TokenType::Star => OpCode::OpMultiply,
             _ => Err(format!(
                 "Unexpected binary operator: {} at line {}",
+                op.operator.lexeme, op.operator.line
+            ))?,
+        };
+        self.emit_byte(op_code as u8);
+        Ok(())
+    }
+
+    fn logical(&mut self, op: Logical) -> Result<(), String> {
+        self.expression(*op.left)?;
+        self.expression(*op.right)?;
+        let op_code = match op.operator.typ {
+            TokenType::And => OpCode::OpAnd,
+            TokenType::Or => OpCode::OpOr,
+            _ => Err(format!(
+                "Unexpected logical operator: {} at line {}",
                 op.operator.lexeme, op.operator.line
             ))?,
         };

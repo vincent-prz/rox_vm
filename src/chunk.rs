@@ -10,12 +10,18 @@ pub enum OpCode {
     OpDivide,
     OpNegate,
     OpReturn,
+    OpTrue,
+    OpFalse,
+    OpNot,
+    OpAnd,
+    OpOr,
 }
 
 impl OpCode {
     pub fn new(byte: u8) -> Self {
         // [perf] - try_into might incurr an avoidable perf penalty
-        byte.try_into().expect("Could not decode byte")
+        byte.try_into()
+            .expect(&format!("Could not decode byte {}", byte))
     }
 }
 
@@ -32,6 +38,11 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpDivide as u8 => Ok(OpCode::OpDivide),
             x if x == OpCode::OpNegate as u8 => Ok(OpCode::OpNegate),
             x if x == OpCode::OpReturn as u8 => Ok(OpCode::OpReturn),
+            x if x == OpCode::OpTrue as u8 => Ok(OpCode::OpTrue),
+            x if x == OpCode::OpFalse as u8 => Ok(OpCode::OpFalse),
+            x if x == OpCode::OpNot as u8 => Ok(OpCode::OpNot),
+            x if x == OpCode::OpAnd as u8 => Ok(OpCode::OpAnd),
+            x if x == OpCode::OpOr as u8 => Ok(OpCode::OpOr),
             _ => Err(()),
         }
     }
@@ -150,6 +161,11 @@ impl Chunk {
             OpCode::OpDivide => self.simple_instruction("OP_DIVIDE", offset),
             OpCode::OpNegate => self.simple_instruction("OP_NEGATE", offset),
             OpCode::OpConstant => self.constant_instruction("OP_CONSTANT", offset),
+            OpCode::OpTrue => self.simple_instruction("OP_TRUE", offset),
+            OpCode::OpFalse => self.simple_instruction("OP_FALSE", offset),
+            OpCode::OpNot => self.simple_instruction("OP_NOT", offset),
+            OpCode::OpAnd => self.simple_instruction("OP_AND", offset),
+            OpCode::OpOr => self.simple_instruction("OP_OR", offset),
         }
     }
 

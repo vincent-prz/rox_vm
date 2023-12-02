@@ -691,7 +691,7 @@ pub mod parser {
         }
 
         fn unary(&mut self) -> Result<Expr, ParseError> {
-            if self.matches(&vec![Minus, Bang]) {
+            if self.matches(&vec![Minus, Not]) {
                 let operator = self.previous();
                 let right = self.unary()?;
                 return Ok(Expr::Unary(Unary {

@@ -25,6 +25,7 @@ pub enum TokenType {
     Str(String),
     // keywords
     And,
+    Not,
     Struct,
     Else,
     False,
