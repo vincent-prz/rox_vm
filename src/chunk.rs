@@ -86,6 +86,12 @@ impl Chunk {
     pub fn read_constant(&self, address: u8) -> Value {
         self.constants[address as usize]
     }
+
+    pub fn get_lineno(&self, offset: usize) -> usize {
+        self.line_info
+            .get_lineno(offset)
+            .expect(&format!("Couldn't retrieve lineno for offset {}", offset))
+    }
 }
 
 /// Line info is encoded with tuples like representing `(offset, lineno).`

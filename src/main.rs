@@ -2,7 +2,7 @@ use rox::ast::parser::Parser;
 use rox::chunk::Chunk;
 use rox::compiler::Compiler;
 use rox::scanner::Scanner;
-use rox::vm::InterpretError;
+use rox::vm::RuntimeError;
 use rox::vm::VM;
 use std::env;
 use std::fs;
@@ -82,8 +82,8 @@ fn run(source: String) {
 
     let mut vm = VM::new();
     match vm.interpret(chunk) {
-        Err(_) => {
-            println!("Runtime error");
+        Err(RuntimeError { msg }) => {
+            println!("{}", msg);
             exit(70);
         }
         Ok(()) => {}

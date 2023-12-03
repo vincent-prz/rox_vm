@@ -19,9 +19,7 @@ macro_rules! binary_op {
                 $self.push(Value::Number(x $op y));
             },
             _ => {
-                Err(InterpretError {
-                    msg: "Operands must be numbers".to_string(),
-                })?;
+                Err($self.runtime_error("Operands must be numbers".to_string()))?;
             }
         }
     }};
@@ -36,9 +34,7 @@ macro_rules! logical_op {
                 $self.push(Value::Boolean(x $op y));
             },
             _ => {
-                Err(InterpretError {
-                    msg: "Operands must be booleans".to_string(),
-                })?;
+                Err($self.runtime_error("Operands must be booleans".to_string()))?;
             }
         }
     }};
@@ -53,13 +49,13 @@ impl VM {
         }
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), InterpretError> {
+    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), RuntimeError> {
         self.chunk = Some(chunk);
         self.ip = 0;
         self.run()
     }
 
-    fn run(&mut self) -> Result<(), InterpretError> {
+    fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
             #[cfg(feature = "debugTraceExecution")]
             {
@@ -82,9 +78,7 @@ impl VM {
                     let value = self.pop();
                     match value {
                         Value::Number(number) => self.push(Value::Number(-number)),
-                        _ => Err(InterpretError {
-                            msg: "Operand must be a number".to_string(),
-                        })?,
+                        _ => Err(self.runtime_error("Operand must be a number".to_string()))?,
                     }
                 }
                 OpCode::OpAdd => binary_op!(self, +),
@@ -102,9 +96,7 @@ impl VM {
                     let value = self.pop();
                     match value {
                         Value::Boolean(b) => self.push(Value::Boolean(!b)),
-                        _ => Err(InterpretError {
-                            msg: "Operand must be a boolean".to_string(),
-                        })?,
+                        _ => Err(self.runtime_error("Operand must be a boolean".to_string()))?,
                     }
                 }
                 OpCode::OpAnd => logical_op!(self, &&),
@@ -137,8 +129,20 @@ impl VM {
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Tried to pop on empty stack")
     }
+
+    fn reset_stack(&mut self) {
+        self.stack.clear();
+    }
+
+    fn runtime_error(&mut self, msg: String) -> RuntimeError {
+        let lineno = self.unwrap_chunk().get_lineno(self.ip - 1);
+        self.reset_stack();
+        RuntimeError {
+            msg: format!("{}\n[line {}] in script", msg, lineno),
+        }
+    }
 }
 
-pub struct InterpretError {
-    msg: String,
+pub struct RuntimeError {
+    pub msg: String,
 }
