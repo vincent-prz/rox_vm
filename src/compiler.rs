@@ -106,6 +106,12 @@ impl<'a> Compiler<'a> {
             TokenType::Plus => OpCode::OpAdd,
             TokenType::Slash => OpCode::OpDivide,
             TokenType::Star => OpCode::OpMultiply,
+            TokenType::EqualEqual => OpCode::OpEqualEqual,
+            TokenType::BangEqual => OpCode::OpBangEqual,
+            TokenType::Less => OpCode::OpLess,
+            TokenType::LessEqual => OpCode::OpLessEqual,
+            TokenType::Greater => OpCode::OpGreater,
+            TokenType::GreaterEqual => OpCode::OpGreaterEqual,
             _ => Err(format!(
                 "Unexpected binary operator: {} at line {}",
                 op.operator.lexeme, op.operator.line

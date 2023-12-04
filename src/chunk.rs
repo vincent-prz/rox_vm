@@ -15,6 +15,12 @@ pub enum OpCode {
     OpNot,
     OpAnd,
     OpOr,
+    OpEqualEqual,
+    OpBangEqual,
+    OpLess,
+    OpLessEqual,
+    OpGreater,
+    OpGreaterEqual,
 }
 
 impl OpCode {
@@ -43,6 +49,12 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpNot as u8 => Ok(OpCode::OpNot),
             x if x == OpCode::OpAnd as u8 => Ok(OpCode::OpAnd),
             x if x == OpCode::OpOr as u8 => Ok(OpCode::OpOr),
+            x if x == OpCode::OpEqualEqual as u8 => Ok(OpCode::OpEqualEqual),
+            x if x == OpCode::OpBangEqual as u8 => Ok(OpCode::OpBangEqual),
+            x if x == OpCode::OpLess as u8 => Ok(OpCode::OpLess),
+            x if x == OpCode::OpLessEqual as u8 => Ok(OpCode::OpLessEqual),
+            x if x == OpCode::OpGreater as u8 => Ok(OpCode::OpGreater),
+            x if x == OpCode::OpGreaterEqual as u8 => Ok(OpCode::OpGreaterEqual),
             _ => Err(()),
         }
     }
@@ -172,6 +184,12 @@ impl Chunk {
             OpCode::OpNot => self.simple_instruction("OP_NOT", offset),
             OpCode::OpAnd => self.simple_instruction("OP_AND", offset),
             OpCode::OpOr => self.simple_instruction("OP_OR", offset),
+            OpCode::OpEqualEqual => self.simple_instruction("OP_EQUAL_EQUAL", offset),
+            OpCode::OpBangEqual => self.simple_instruction("OP_BANG_EQUAL", offset),
+            OpCode::OpLess => self.simple_instruction("OP_LESS", offset),
+            OpCode::OpLessEqual => self.simple_instruction("OP_LESS_EQUAL", offset),
+            OpCode::OpGreater => self.simple_instruction("OP_GREATER", offset),
+            OpCode::OpGreaterEqual => self.simple_instruction("OP_GREATER_EQUAL", offset),
         }
     }
 

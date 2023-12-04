@@ -25,6 +25,24 @@ macro_rules! binary_op {
     }};
 }
 
+macro_rules! comparison_op {
+    ($self:expr, $op:tt) => {{
+        let b = $self.pop();
+        let a = $self.pop();
+        match (a, b) {
+            (Value::Number(x), Value::Number(y)) => {
+                $self.push(Value::Boolean(x $op y));
+            },
+            (Value::Boolean(x), Value::Boolean(y)) => {
+                $self.push(Value::Boolean(x $op y));
+            },
+            _ => {
+                Err($self.runtime_error("Operands must have the same type".to_string()))?;
+            }
+        }
+    }};
+}
+
 macro_rules! logical_op {
     ($self:expr, $op:tt) => {{
         let b = $self.pop();
@@ -85,6 +103,12 @@ impl VM {
                 OpCode::OpSubtract => binary_op!(self, -),
                 OpCode::OpMultiply => binary_op!(self, *),
                 OpCode::OpDivide => binary_op!(self, /),
+                OpCode::OpEqualEqual => comparison_op!(self, ==),
+                OpCode::OpBangEqual => comparison_op!(self, !=),
+                OpCode::OpLess => comparison_op!(self, <),
+                OpCode::OpLessEqual => comparison_op!(self, <=),
+                OpCode::OpGreater => comparison_op!(self, >),
+                OpCode::OpGreaterEqual => comparison_op!(self, >=),
                 OpCode::OpReturn => {
                     print!("{}", self.pop());
                     println!("");
