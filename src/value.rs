@@ -1,9 +1,10 @@
 use std::fmt;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
+    Str(String),
 }
 
 impl fmt::Display for Value {
@@ -11,6 +12,7 @@ impl fmt::Display for Value {
         match self {
             Value::Number(n) => write!(f, "{}", n),
             Value::Boolean(b) => write!(f, "{}", b),
+            Value::Str(s) => write!(f, "{}", s),
         }
     }
 }

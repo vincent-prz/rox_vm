@@ -96,7 +96,8 @@ impl Chunk {
     }
 
     pub fn read_constant(&self, address: u8) -> Value {
-        self.constants[address as usize]
+        // [perf] what's the perf impact of this clone ?
+        self.constants[address as usize].clone()
     }
 
     pub fn get_lineno(&self, offset: usize) -> usize {
