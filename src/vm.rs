@@ -1,5 +1,5 @@
 use crate::chunk::{Chunk, OpCode};
-use crate::value::{print_value, Value};
+use crate::value::Value;
 
 pub struct VM {
     chunk: Option<Chunk>,
@@ -14,9 +14,50 @@ macro_rules! binary_op {
     ($self:expr, $op:tt) => {{
         let b = $self.pop();
         let a = $self.pop();
-        $self.push(a $op b);
+        match (a, b) {
+            (Value::Number(x), Value::Number(y)) => {
+                $self.push(Value::Number(x $op y));
+            },
+            _ => {
+                Err($self.runtime_error("Operands must be numbers".to_string()))?;
+            }
+        }
     }};
 }
+
+macro_rules! comparison_op {
+    ($self:expr, $op:tt) => {{
+        let b = $self.pop();
+        let a = $self.pop();
+        match (a, b) {
+            (Value::Number(x), Value::Number(y)) => {
+                $self.push(Value::Boolean(x $op y));
+            },
+            (Value::Boolean(x), Value::Boolean(y)) => {
+                $self.push(Value::Boolean(x $op y));
+            },
+            _ => {
+                Err($self.runtime_error("Operands must have the same type".to_string()))?;
+            }
+        }
+    }};
+}
+
+macro_rules! logical_op {
+    ($self:expr, $op:tt) => {{
+        let b = $self.pop();
+        let a = $self.pop();
+        match (a, b) {
+            (Value::Boolean(x), Value::Boolean(y)) => {
+                $self.push(Value::Boolean(x $op y));
+            },
+            _ => {
+                Err($self.runtime_error("Operands must be booleans".to_string()))?;
+            }
+        }
+    }};
+}
+
 impl VM {
     pub fn new() -> Self {
         VM {
@@ -26,13 +67,13 @@ impl VM {
         }
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), InterpretError> {
+    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), RuntimeError> {
         self.chunk = Some(chunk);
         self.ip = 0;
         self.run()
     }
 
-    fn run(&mut self) -> Result<(), InterpretError> {
+    fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
             #[cfg(feature = "debugTraceExecution")]
             {
@@ -53,17 +94,37 @@ impl VM {
                 }
                 OpCode::OpNegate => {
                     let value = self.pop();
-                    self.push(-value);
+                    match value {
+                        Value::Number(number) => self.push(Value::Number(-number)),
+                        _ => Err(self.runtime_error("Operand must be a number".to_string()))?,
+                    }
                 }
                 OpCode::OpAdd => binary_op!(self, +),
                 OpCode::OpSubtract => binary_op!(self, -),
                 OpCode::OpMultiply => binary_op!(self, *),
                 OpCode::OpDivide => binary_op!(self, /),
+                OpCode::OpEqualEqual => comparison_op!(self, ==),
+                OpCode::OpBangEqual => comparison_op!(self, !=),
+                OpCode::OpLess => comparison_op!(self, <),
+                OpCode::OpLessEqual => comparison_op!(self, <=),
+                OpCode::OpGreater => comparison_op!(self, >),
+                OpCode::OpGreaterEqual => comparison_op!(self, >=),
                 OpCode::OpReturn => {
-                    print_value(self.pop());
+                    print!("{}", self.pop());
                     println!("");
                     return Ok(());
                 }
+                OpCode::OpTrue => self.push(Value::Boolean(true)),
+                OpCode::OpFalse => self.push(Value::Boolean(false)),
+                OpCode::OpNot => {
+                    let value = self.pop();
+                    match value {
+                        Value::Boolean(b) => self.push(Value::Boolean(!b)),
+                        _ => Err(self.runtime_error("Operand must be a boolean".to_string()))?,
+                    }
+                }
+                OpCode::OpAnd => logical_op!(self, &&),
+                OpCode::OpOr => logical_op!(self, ||),
             }
         }
     }
@@ -92,8 +153,20 @@ impl VM {
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Tried to pop on empty stack")
     }
+
+    fn reset_stack(&mut self) {
+        self.stack.clear();
+    }
+
+    fn runtime_error(&mut self, msg: String) -> RuntimeError {
+        let lineno = self.unwrap_chunk().get_lineno(self.ip - 1);
+        self.reset_stack();
+        RuntimeError {
+            msg: format!("{}\n[line {}] in script", msg, lineno),
+        }
+    }
 }
 
-pub enum InterpretError {
-    InterpretRuntimeError,
+pub struct RuntimeError {
+    pub msg: String,
 }

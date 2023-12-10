@@ -1,4 +1,4 @@
-use crate::value::{print_value, Value};
+use crate::value::Value;
 use std::convert::TryFrom;
 
 #[derive(Debug)]
@@ -10,12 +10,24 @@ pub enum OpCode {
     OpDivide,
     OpNegate,
     OpReturn,
+    OpTrue,
+    OpFalse,
+    OpNot,
+    OpAnd,
+    OpOr,
+    OpEqualEqual,
+    OpBangEqual,
+    OpLess,
+    OpLessEqual,
+    OpGreater,
+    OpGreaterEqual,
 }
 
 impl OpCode {
     pub fn new(byte: u8) -> Self {
         // [perf] - try_into might incurr an avoidable perf penalty
-        byte.try_into().expect("Could not decode byte")
+        byte.try_into()
+            .expect(&format!("Could not decode byte {}", byte))
     }
 }
 
@@ -32,6 +44,17 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpDivide as u8 => Ok(OpCode::OpDivide),
             x if x == OpCode::OpNegate as u8 => Ok(OpCode::OpNegate),
             x if x == OpCode::OpReturn as u8 => Ok(OpCode::OpReturn),
+            x if x == OpCode::OpTrue as u8 => Ok(OpCode::OpTrue),
+            x if x == OpCode::OpFalse as u8 => Ok(OpCode::OpFalse),
+            x if x == OpCode::OpNot as u8 => Ok(OpCode::OpNot),
+            x if x == OpCode::OpAnd as u8 => Ok(OpCode::OpAnd),
+            x if x == OpCode::OpOr as u8 => Ok(OpCode::OpOr),
+            x if x == OpCode::OpEqualEqual as u8 => Ok(OpCode::OpEqualEqual),
+            x if x == OpCode::OpBangEqual as u8 => Ok(OpCode::OpBangEqual),
+            x if x == OpCode::OpLess as u8 => Ok(OpCode::OpLess),
+            x if x == OpCode::OpLessEqual as u8 => Ok(OpCode::OpLessEqual),
+            x if x == OpCode::OpGreater as u8 => Ok(OpCode::OpGreater),
+            x if x == OpCode::OpGreaterEqual as u8 => Ok(OpCode::OpGreaterEqual),
             _ => Err(()),
         }
     }
@@ -74,6 +97,12 @@ impl Chunk {
 
     pub fn read_constant(&self, address: u8) -> Value {
         self.constants[address as usize]
+    }
+
+    pub fn get_lineno(&self, offset: usize) -> usize {
+        self.line_info
+            .get_lineno(offset)
+            .expect(&format!("Couldn't retrieve lineno for offset {}", offset))
     }
 }
 
@@ -150,6 +179,17 @@ impl Chunk {
             OpCode::OpDivide => self.simple_instruction("OP_DIVIDE", offset),
             OpCode::OpNegate => self.simple_instruction("OP_NEGATE", offset),
             OpCode::OpConstant => self.constant_instruction("OP_CONSTANT", offset),
+            OpCode::OpTrue => self.simple_instruction("OP_TRUE", offset),
+            OpCode::OpFalse => self.simple_instruction("OP_FALSE", offset),
+            OpCode::OpNot => self.simple_instruction("OP_NOT", offset),
+            OpCode::OpAnd => self.simple_instruction("OP_AND", offset),
+            OpCode::OpOr => self.simple_instruction("OP_OR", offset),
+            OpCode::OpEqualEqual => self.simple_instruction("OP_EQUAL_EQUAL", offset),
+            OpCode::OpBangEqual => self.simple_instruction("OP_BANG_EQUAL", offset),
+            OpCode::OpLess => self.simple_instruction("OP_LESS", offset),
+            OpCode::OpLessEqual => self.simple_instruction("OP_LESS_EQUAL", offset),
+            OpCode::OpGreater => self.simple_instruction("OP_GREATER", offset),
+            OpCode::OpGreaterEqual => self.simple_instruction("OP_GREATER_EQUAL", offset),
         }
     }
 
@@ -161,7 +201,7 @@ impl Chunk {
     fn constant_instruction(&self, name: &str, offset: usize) -> usize {
         let constant_addr = self.code[offset + 1];
         print!("{:<16} {} '", name, constant_addr);
-        print_value(self.constants[constant_addr as usize]);
+        print!("{}", self.constants[constant_addr as usize]);
         println!("'");
         offset + 2
     }

@@ -227,6 +227,7 @@ impl Scanner {
         match identifier {
             // reserved keywords
             "and" => self.add_token(TokenType::And),
+            "not" => self.add_token(TokenType::Not),
             "struct" => self.add_token(TokenType::Struct),
             "else" => self.add_token(TokenType::Else),
             "false" => self.add_token(TokenType::False),
