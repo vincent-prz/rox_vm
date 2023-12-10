@@ -11,33 +11,15 @@ pub struct VM {
 }
 
 macro_rules! binary_op {
-    ($self:expr, $op:tt) => {{
+    ($self:expr, $op:tt, $valueType:expr) => {{
         let b = $self.pop();
         let a = $self.pop();
         match (a, b) {
             (Value::Number(x), Value::Number(y)) => {
-                $self.push(Value::Number(x $op y));
+                $self.push($valueType(x $op y));
             },
             _ => {
                 Err($self.runtime_error("Operands must be numbers".to_string()))?;
-            }
-        }
-    }};
-}
-
-macro_rules! comparison_op {
-    ($self:expr, $op:tt) => {{
-        let b = $self.pop();
-        let a = $self.pop();
-        match (a, b) {
-            (Value::Number(x), Value::Number(y)) => {
-                $self.push(Value::Boolean(x $op y));
-            },
-            (Value::Boolean(x), Value::Boolean(y)) => {
-                $self.push(Value::Boolean(x $op y));
-            },
-            _ => {
-                Err($self.runtime_error("Operands must have the same type".to_string()))?;
             }
         }
     }};
@@ -99,16 +81,24 @@ impl VM {
                         _ => Err(self.runtime_error("Operand must be a number".to_string()))?,
                     }
                 }
-                OpCode::OpAdd => binary_op!(self, +),
-                OpCode::OpSubtract => binary_op!(self, -),
-                OpCode::OpMultiply => binary_op!(self, *),
-                OpCode::OpDivide => binary_op!(self, /),
-                OpCode::OpEqualEqual => comparison_op!(self, ==),
-                OpCode::OpBangEqual => comparison_op!(self, !=),
-                OpCode::OpLess => comparison_op!(self, <),
-                OpCode::OpLessEqual => comparison_op!(self, <=),
-                OpCode::OpGreater => comparison_op!(self, >),
-                OpCode::OpGreaterEqual => comparison_op!(self, >=),
+                OpCode::OpAdd => binary_op!(self, +, Value::Number),
+                OpCode::OpSubtract => binary_op!(self, -, Value::Number),
+                OpCode::OpMultiply => binary_op!(self, *, Value::Number),
+                OpCode::OpDivide => binary_op!(self, /, Value::Number),
+                OpCode::OpEqualEqual => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(Value::Boolean(a == b));
+                }
+                OpCode::OpBangEqual => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(Value::Boolean(a != b));
+                }
+                OpCode::OpLess => binary_op!(self, <, Value::Boolean),
+                OpCode::OpLessEqual => binary_op!(self, <=, Value::Boolean),
+                OpCode::OpGreater => binary_op!(self, >, Value::Boolean),
+                OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
                     print!("{}", self.pop());
                     println!("");
