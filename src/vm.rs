@@ -62,7 +62,7 @@ impl VM {
                 print!("          ");
                 for value in &self.stack {
                     print!("[ ");
-                    print_value(*value);
+                    print!("{}", *value);
                     print!(" ]");
                 }
                 println!("");
@@ -81,7 +81,23 @@ impl VM {
                         _ => Err(self.runtime_error("Operand must be a number".to_string()))?,
                     }
                 }
-                OpCode::OpAdd => binary_op!(self, +, Value::Number),
+                OpCode::OpAdd => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    match (a, b) {
+                        (Value::Number(x), Value::Number(y)) => {
+                            self.push(Value::Number(x + y));
+                        }
+                        (Value::Str(x), Value::Str(y)) => {
+                            self.push(Value::Str(format!("{}{}", x, y)));
+                        }
+                        _ => {
+                            Err(self.runtime_error(
+                                "Operands must be two numbers or two strings".to_string(),
+                            ))?;
+                        }
+                    }
+                }
                 OpCode::OpSubtract => binary_op!(self, -, Value::Number),
                 OpCode::OpMultiply => binary_op!(self, *, Value::Number),
                 OpCode::OpDivide => binary_op!(self, /, Value::Number),
@@ -100,8 +116,7 @@ impl VM {
                 OpCode::OpGreater => binary_op!(self, >, Value::Boolean),
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
-                    print!("{}", self.pop());
-                    println!("");
+                    println!("{}", self.pop());
                     return Ok(());
                 }
                 OpCode::OpTrue => self.push(Value::Boolean(true)),
