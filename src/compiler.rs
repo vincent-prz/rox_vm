@@ -42,7 +42,7 @@ impl<'a> Compiler<'a> {
         match statement.statement {
             InnerStatement::ExprStmt(expr) => self.expression(expr),
             InnerStatement::IfStmt(_) => todo!(),
-            InnerStatement::PrintStmt(_) => todo!(),
+            InnerStatement::PrintStmt(expr) => self.print_statement(expr),
             InnerStatement::ReturnStmt(_) => self.return_statement(),
             InnerStatement::WhileStmt(_) => todo!(),
             InnerStatement::Block(_) => todo!(),
@@ -134,6 +134,12 @@ impl<'a> Compiler<'a> {
 
     fn return_statement(&mut self) -> Result<(), String> {
         self.emit_byte(OpCode::OpReturn as u8);
+        Ok(())
+    }
+
+    fn print_statement(&mut self, expr: Expr) -> Result<(), String> {
+        self.expression(expr)?;
+        self.emit_byte(OpCode::OpPrint as u8);
         Ok(())
     }
 

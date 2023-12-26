@@ -242,6 +242,7 @@ impl Scanner {
             "true" => self.add_token(TokenType::True),
             "let" => self.add_token(TokenType::Let),
             "while" => self.add_token(TokenType::While),
+            "print" => self.add_token(TokenType::Print),
             // bare identifier
             _ => {
                 let token_type = TokenType::Identifier(identifier.to_string());

@@ -130,6 +130,9 @@ impl VM {
                 }
                 OpCode::OpAnd => logical_op!(self, &&),
                 OpCode::OpOr => logical_op!(self, ||),
+                OpCode::OpPrint => {
+                    println!("{}", self.pop());
+                }
             }
         }
     }

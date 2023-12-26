@@ -40,6 +40,7 @@ pub enum TokenType {
     True,
     Let,
     While,
+    Print,
     // EOF
     Eof,
 }

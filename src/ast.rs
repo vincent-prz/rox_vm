@@ -467,6 +467,12 @@ pub mod parser {
                     self.advance(); // discard left brace
                     Ok(InnerStatement::Block(self.block()?))
                 }
+                Print => {
+                    self.advance(); // discard print token
+                    let expr = self.expression()?;
+                    self.consume(&Semicolon, "Expect ';' after value.")?;
+                    Ok(InnerStatement::PrintStmt(expr))
+                }
                 _ => self.expr_statement(),
             };
             inner_stmt.map(|statement| Statement {
