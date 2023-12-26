@@ -22,6 +22,7 @@ impl<'a> Compiler<'a> {
         for decl in program_ast.declarations {
             self.declaration(decl)?;
         }
+        self.emit_byte(OpCode::OpEof as u8);
         #[cfg(feature = "debugPrintCode")]
         {
             self.current_chunk.disassemble("code");

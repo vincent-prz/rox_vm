@@ -132,6 +132,9 @@ impl VM {
                 OpCode::OpPrint => {
                     println!("{}", self.pop());
                 }
+                OpCode::OpEof => {
+                    return Ok(());
+                }
             }
         }
     }
