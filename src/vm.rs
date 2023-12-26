@@ -116,7 +116,6 @@ impl VM {
                 OpCode::OpGreater => binary_op!(self, >, Value::Boolean),
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
-                    println!("{}", self.pop());
                     return Ok(());
                 }
                 OpCode::OpTrue => self.push(Value::Boolean(true)),
