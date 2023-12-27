@@ -1,5 +1,6 @@
 use crate::ast::{
-    Binary, Declaration, Expr, InnerStatement, Literal, Logical, Program, Statement, Unary,
+    Binary, Declaration, Expr, InnerStatement, LetDecl, Literal, Logical, Program, Statement,
+    Unary, Variable,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::TokenType;
@@ -33,7 +34,7 @@ impl<'a> Compiler<'a> {
     fn declaration(&mut self, decl: Declaration) -> Result<(), String> {
         match decl {
             Declaration::FunDecl(_) => todo!(),
-            Declaration::LetDecl(_) => todo!(),
+            Declaration::LetDecl(decl) => self.let_decl(decl),
             Declaration::Statement(statement) => self.statement(statement),
         }
     }
@@ -57,7 +58,7 @@ impl<'a> Compiler<'a> {
             Expr::Binary(op) => self.binary(op),
             Expr::Call(_) => todo!(),
             Expr::Grouping(group) => self.expression(*group.expression),
-            Expr::Variable(_) => todo!(),
+            Expr::Variable(variable) => self.variable(variable),
             Expr::Assignment(_) => todo!(),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Get(_) => todo!(),
@@ -141,6 +142,23 @@ impl<'a> Compiler<'a> {
     fn print_statement(&mut self, expr: Expr) -> Result<(), String> {
         self.expression(expr)?;
         self.emit_byte(OpCode::OpPrint as u8);
+        Ok(())
+    }
+
+    fn let_decl(&mut self, decl: LetDecl) -> Result<(), String> {
+        // FIXME: allow absence of initializer
+        let initializer = decl
+            .initializer
+            .expect("Expected initializer to let declaration");
+        self.expression(initializer)?;
+        let constant = self.make_constant(Value::Str(decl.identifier.lexeme));
+        self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
+        Ok(())
+    }
+
+    fn variable(&mut self, variable: Variable) -> Result<(), String> {
+        let constant = self.make_constant(Value::Str(variable.name.lexeme));
+        self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
         Ok(())
     }
 

@@ -22,6 +22,8 @@ pub enum OpCode {
     OpLessEqual,
     OpGreater,
     OpGreaterEqual,
+    OpDefineGlobal,
+    OpGetGlobal,
     OpEof,
 }
 
@@ -58,6 +60,8 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpLessEqual as u8 => Ok(OpCode::OpLessEqual),
             x if x == OpCode::OpGreater as u8 => Ok(OpCode::OpGreater),
             x if x == OpCode::OpGreaterEqual as u8 => Ok(OpCode::OpGreaterEqual),
+            x if x == OpCode::OpDefineGlobal as u8 => Ok(OpCode::OpDefineGlobal),
+            x if x == OpCode::OpGetGlobal as u8 => Ok(OpCode::OpGetGlobal),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
@@ -196,6 +200,8 @@ impl Chunk {
             OpCode::OpLessEqual => self.simple_instruction("OP_LESS_EQUAL", offset),
             OpCode::OpGreater => self.simple_instruction("OP_GREATER", offset),
             OpCode::OpGreaterEqual => self.simple_instruction("OP_GREATER_EQUAL", offset),
+            OpCode::OpDefineGlobal => self.constant_instruction("OP_DEFINE_GLOBAL", offset),
+            OpCode::OpGetGlobal => self.constant_instruction("OP_GET_GLOBAL", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::chunk::{Chunk, OpCode};
 use crate::value::Value;
 
@@ -8,6 +10,7 @@ pub struct VM {
     ip: usize,
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
     stack: Vec<Value>,
+    globals: HashMap<String, Value>,
 }
 
 macro_rules! binary_op {
@@ -46,6 +49,7 @@ impl VM {
             chunk: None,
             ip: 0,
             stack: Vec::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -131,6 +135,27 @@ impl VM {
                 OpCode::OpOr => logical_op!(self, ||),
                 OpCode::OpPrint => {
                     println!("{}", self.pop());
+                }
+                OpCode::OpDefineGlobal => {
+                    let value = self.pop();
+                    let constant = self.read_constant();
+                    if let Value::Str(constant) = constant {
+                        self.globals.insert(constant, value);
+                    } else {
+                        Err(self.runtime_error("Expected string constant".to_string()))?;
+                    }
+                }
+                OpCode::OpGetGlobal => {
+                    let constant = self.read_constant();
+                    if let Value::Str(constant) = constant {
+                        if let Some(value) = self.globals.get(&constant) {
+                            self.push(value.clone());
+                        } else {
+                            Err(self.runtime_error(format!("Undefined variable '{}'", constant)))?;
+                        }
+                    } else {
+                        Err(self.runtime_error("Expected string constant".to_string()))?;
+                    }
                 }
                 OpCode::OpEof => {
                     return Ok(());
