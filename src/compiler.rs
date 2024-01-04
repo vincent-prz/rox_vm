@@ -1,6 +1,5 @@
 use crate::ast::{
-    Binary, Declaration, Expr, InnerStatement, LetDecl, Literal, Logical, Program, Statement,
-    Unary, Variable,
+    Binary, Declaration, Expr, LetDecl, Literal, Logical, Program, Statement, Unary, Variable,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::TokenType;
@@ -20,7 +19,8 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn run(&mut self, program_ast: Program) -> Result<(), String> {
-        for decl in program_ast.declarations {
+        for (lineno, decl) in program_ast.declarations {
+            self.current_line = lineno;
             self.declaration(decl)?;
         }
         self.emit_byte(OpCode::OpEof as u8);
@@ -40,14 +40,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn statement(&mut self, statement: Statement) -> Result<(), String> {
-        self.current_line = statement.token.line;
-        match statement.statement {
-            InnerStatement::ExprStmt(expr) => self.expression(expr),
-            InnerStatement::IfStmt(_) => todo!(),
-            InnerStatement::PrintStmt(expr) => self.print_statement(expr),
-            InnerStatement::ReturnStmt(_) => self.return_statement(),
-            InnerStatement::WhileStmt(_) => todo!(),
-            InnerStatement::Block(_) => todo!(),
+        match statement {
+            Statement::ExprStmt(expr) => self.expression(expr),
+            Statement::IfStmt(_) => todo!(),
+            Statement::PrintStmt(expr) => self.print_statement(expr),
+            Statement::ReturnStmt(_) => self.return_statement(),
+            Statement::WhileStmt(_) => todo!(),
+            Statement::Block(_) => todo!(),
         }
     }
 
