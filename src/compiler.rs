@@ -58,10 +58,13 @@ impl<'a> Compiler<'a> {
             Expr::Call(_) => todo!(),
             Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(variable) => self.variable(variable),
-            Expr::Assignment(_) => todo!(),
+            Expr::Assignment(ass) => Err(format!(
+                "Assignement not supported, see line {}",
+                ass.name.line
+            )),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Get(_) => todo!(),
-            Expr::Set(_) => todo!(),
+            Expr::Set(set) => Err(format!("Set not supported, see line {}", set.name.line)),
         }
     }
 
