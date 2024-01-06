@@ -157,6 +157,18 @@ impl VM {
                         Err(self.runtime_error("Expected string constant".to_string()))?;
                     }
                 }
+                OpCode::OpPop => {
+                    self.pop();
+                }
+                OpCode::OpPopN => {
+                    let nb_elems_to_pop = self.read_byte();
+                    self.pop_n(nb_elems_to_pop);
+                }
+                OpCode::OpGetLocal => {
+                    let local_index = self.read_byte();
+                    let local_value = self.get_local(local_index);
+                    self.push(local_value);
+                }
                 OpCode::OpEof => {
                     return Ok(());
                 }
@@ -187,6 +199,16 @@ impl VM {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Tried to pop on empty stack")
+    }
+
+    fn pop_n(&mut self, nb_elem_to_pop: u8) {
+        let new_len = self.stack.len() - <u8 as Into<usize>>::into(nb_elem_to_pop);
+        self.stack.truncate(new_len);
+    }
+
+    fn get_local(&self, index: u8) -> Value {
+        let usize_index: usize = index.try_into().unwrap();
+        self.stack[usize_index].clone()
     }
 
     fn reset_stack(&mut self) {

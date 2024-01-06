@@ -2,12 +2,19 @@ use crate::ast::{
     Binary, Declaration, Expr, LetDecl, Literal, Logical, Program, Statement, Unary, Variable,
 };
 use crate::chunk::{Chunk, OpCode};
-use crate::token::TokenType;
+use crate::token::{Token, TokenType};
 use crate::value::Value;
 
 pub struct Compiler<'a> {
     current_line: u16,
     current_chunk: &'a mut Chunk,
+    locals: Vec<Local>,
+    scope_depth: u8,
+}
+
+struct Local {
+    name: Token,
+    depth: u8,
 }
 
 impl<'a> Compiler<'a> {
@@ -15,6 +22,8 @@ impl<'a> Compiler<'a> {
         Compiler {
             current_line: 0,
             current_chunk: chunk,
+            locals: Vec::new(),
+            scope_depth: 0,
         }
     }
 
@@ -46,7 +55,7 @@ impl<'a> Compiler<'a> {
             Statement::PrintStmt(expr) => self.print_statement(expr),
             Statement::ReturnStmt(_) => self.return_statement(),
             Statement::WhileStmt(_) => todo!(),
-            Statement::Block(_) => todo!(),
+            Statement::Block(declarations) => self.block(declarations),
         }
     }
 
@@ -58,13 +67,10 @@ impl<'a> Compiler<'a> {
             Expr::Call(_) => todo!(),
             Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(variable) => self.variable(variable),
-            Expr::Assignment(ass) => Err(format!(
-                "Assignement not supported, see line {}",
-                ass.name.line
-            )),
+            Expr::Assignment(_) => Err(self.report_error("Assignment not supported".to_string())),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Get(_) => todo!(),
-            Expr::Set(set) => Err(format!("Set not supported, see line {}", set.name.line)),
+            Expr::Set(_) => Err(self.report_error("Set not supported".to_string())),
         }
     }
 
@@ -153,15 +159,87 @@ impl<'a> Compiler<'a> {
             .initializer
             .expect("Expected initializer to let declaration");
         self.expression(initializer)?;
+        if self.scope_depth > 0 {
+            self.add_local(decl.identifier)?;
+            return Ok(());
+        }
         let constant = self.make_constant(Value::Str(decl.identifier.lexeme));
         self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         Ok(())
     }
 
     fn variable(&mut self, variable: Variable) -> Result<(), String> {
-        let constant = self.make_constant(Value::Str(variable.name.lexeme));
-        self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
+        let local_index = self.resolve_local(&variable.name);
+        match local_index {
+            Some(index) => self.emit_bytes(OpCode::OpGetLocal as u8, index.try_into().unwrap()),
+            None => {
+                let constant = self.make_constant(Value::Str(variable.name.lexeme));
+                self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
+            }
+        };
         Ok(())
+    }
+
+    fn block(&mut self, declarations: Vec<Declaration>) -> Result<(), String> {
+        self.scope_depth += 1;
+        // FIXME: line number are not tracked inside blocks
+        for decl in declarations {
+            self.declaration(decl)?;
+        }
+        self.scope_depth -= 1;
+        let mut nb_vars_to_pop: u8 = 0;
+        while self.locals.len() > 0 && self.locals[self.locals.len() - 1].depth > self.scope_depth {
+            self.locals.pop();
+            nb_vars_to_pop += 1;
+        }
+        if nb_vars_to_pop == 1 {
+            self.emit_byte(OpCode::OpPop as u8);
+        } else if nb_vars_to_pop > 1 {
+            self.emit_bytes(OpCode::OpPopN as u8, nb_vars_to_pop);
+        }
+        Ok(())
+    }
+
+    fn add_local(&mut self, name: Token) -> Result<(), String> {
+        for index in (0..self.locals.len()).rev() {
+            let local = &self.locals[index];
+            if local.depth < self.scope_depth {
+                break;
+            }
+            if self.identifiers_equal(&local.name, &name) {
+                return Err(self.report_error(format!(
+                    "Already a variable with the name {} in this scope",
+                    name.lexeme
+                )));
+            }
+        }
+        self.locals.push(Local {
+            name,
+            depth: self.scope_depth,
+        });
+        Ok(())
+    }
+
+    /// return the local index on the stack
+    fn resolve_local(&self, name: &Token) -> Option<usize> {
+        for index in (0..self.locals.len()).rev() {
+            let local = &self.locals[index];
+            if self.identifiers_equal(&local.name, &name) {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    fn identifiers_equal(&self, first: &Token, second: &Token) -> bool {
+        first.lexeme == second.lexeme
+    }
+
+    fn report_error(&self, message: String) -> String {
+        format!(
+            "Compilation error: {}\nat line {}",
+            message, self.current_line
+        )
     }
 
     fn emit_byte(&mut self, byte: u8) {

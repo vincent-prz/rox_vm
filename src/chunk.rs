@@ -24,6 +24,9 @@ pub enum OpCode {
     OpGreaterEqual,
     OpDefineGlobal,
     OpGetGlobal,
+    OpPop,
+    OpPopN,
+    OpGetLocal,
     OpEof,
 }
 
@@ -62,6 +65,9 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpGreaterEqual as u8 => Ok(OpCode::OpGreaterEqual),
             x if x == OpCode::OpDefineGlobal as u8 => Ok(OpCode::OpDefineGlobal),
             x if x == OpCode::OpGetGlobal as u8 => Ok(OpCode::OpGetGlobal),
+            x if x == OpCode::OpPop as u8 => Ok(OpCode::OpPop),
+            x if x == OpCode::OpPopN as u8 => Ok(OpCode::OpPopN),
+            x if x == OpCode::OpGetLocal as u8 => Ok(OpCode::OpGetLocal),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
@@ -202,6 +208,9 @@ impl Chunk {
             OpCode::OpGreaterEqual => self.simple_instruction("OP_GREATER_EQUAL", offset),
             OpCode::OpDefineGlobal => self.constant_instruction("OP_DEFINE_GLOBAL", offset),
             OpCode::OpGetGlobal => self.constant_instruction("OP_GET_GLOBAL", offset),
+            OpCode::OpPop => self.simple_instruction("OP_POP", offset),
+            OpCode::OpPopN => self.instruction_with_operand("OP_POPN", offset),
+            OpCode::OpGetLocal => self.instruction_with_operand("OP_GET_LOCAL", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }
@@ -209,6 +218,11 @@ impl Chunk {
     fn simple_instruction(&self, name: &str, offset: usize) -> usize {
         println!("{}", name);
         offset + 1
+    }
+    fn instruction_with_operand(&self, name: &str, offset: usize) -> usize {
+        let operand = self.code[offset + 1];
+        println!("{:<16} {}", name, operand);
+        offset + 2
     }
 
     fn constant_instruction(&self, name: &str, offset: usize) -> usize {
