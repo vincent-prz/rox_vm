@@ -1,0 +1,11 @@
+// this is the weird case presented at the end of chapter 22
+// I chose to allow this, unlike in the book, to avoid adding
+// extra complexity to the parser.
+{
+  let a = "outer";
+  {
+    let a = a + " inside";
+    print a;
+  }
+  print a;
+}
