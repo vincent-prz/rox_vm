@@ -1,5 +1,6 @@
 use crate::ast::{
-    Binary, Declaration, Expr, LetDecl, Literal, Logical, Program, Statement, Unary, Variable,
+    Binary, Declaration, DeclarationWithLineNo, Expr, LetDecl, Literal, Logical, Program,
+    Statement, Unary, Variable,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
@@ -28,8 +29,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn run(&mut self, program_ast: Program) -> Result<(), String> {
-        for (lineno, decl) in program_ast.declarations {
-            self.current_line = lineno;
+        for decl in program_ast.declarations {
             self.declaration(decl)?;
         }
         self.emit_byte(OpCode::OpEof as u8);
@@ -40,8 +40,10 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn declaration(&mut self, decl: Declaration) -> Result<(), String> {
-        match decl {
+    fn declaration(&mut self, decl: DeclarationWithLineNo) -> Result<(), String> {
+        let inner_decl = decl.decl;
+        self.current_line = decl.lineno;
+        match inner_decl {
             Declaration::FunDecl(_) => todo!(),
             Declaration::LetDecl(decl) => self.let_decl(decl),
             Declaration::Statement(statement) => self.statement(statement),
@@ -180,7 +182,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn block(&mut self, declarations: Vec<Declaration>) -> Result<(), String> {
+    fn block(&mut self, declarations: Vec<DeclarationWithLineNo>) -> Result<(), String> {
         self.scope_depth += 1;
         // FIXME: line number are not tracked inside blocks
         for decl in declarations {

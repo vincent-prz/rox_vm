@@ -2,8 +2,13 @@ use crate::token::{Token, TokenType, TokenType::*};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
-    // the u16 is the line number
-    pub declarations: Vec<(u16, Declaration)>,
+    pub declarations: Vec<DeclarationWithLineNo>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct DeclarationWithLineNo {
+    pub decl: Declaration,
+    pub lineno: u16,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -17,7 +22,7 @@ pub enum Declaration {
 pub struct FunDecl {
     pub name: Token,
     pub params: Vec<Token>,
-    pub body: Vec<Declaration>,
+    pub body: Vec<DeclarationWithLineNo>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -33,7 +38,7 @@ pub enum Statement {
     PrintStmt(Expr),
     ReturnStmt(ReturnStmt),
     WhileStmt(WhileStmt),
-    Block(Vec<Declaration>),
+    Block(Vec<DeclarationWithLineNo>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -370,7 +375,7 @@ pub mod parser {
             while !self.is_at_end() {
                 let lineno = self.peek().line;
                 let decl = self.declaration()?;
-                declarations.push((lineno, decl));
+                declarations.push(DeclarationWithLineNo { decl, lineno });
             }
             Ok(Program { declarations })
         }
@@ -534,11 +539,18 @@ pub mod parser {
             self.consume(&RightParen, "Expect ')' after for clauses.")?;
             let body = self.statement()?;
 
+            let lineno = self.peek().line;
             let full_body = match increment {
                 None => body,
                 Some(incr) => Statement::Block(vec![
-                    Declaration::Statement(body),
-                    Declaration::Statement(Statement::ExprStmt(incr)),
+                    DeclarationWithLineNo {
+                        decl: Declaration::Statement(body),
+                        lineno,
+                    },
+                    DeclarationWithLineNo {
+                        decl: Declaration::Statement(Statement::ExprStmt(incr)),
+                        lineno,
+                    },
                 ]),
             };
 
@@ -552,20 +564,27 @@ pub mod parser {
             Ok(match initializer {
                 None => Statement::WhileStmt(while_stmt),
                 Some(var_decl) => Statement::Block(vec![
-                    var_decl,
-                    Declaration::Statement(Statement::WhileStmt(while_stmt)),
+                    DeclarationWithLineNo {
+                        decl: var_decl,
+                        lineno,
+                    },
+                    DeclarationWithLineNo {
+                        decl: Declaration::Statement(Statement::WhileStmt(while_stmt)),
+                        lineno,
+                    },
                 ]),
             })
         }
 
         // FIXME disagreeing with the book here - it seems we want to return Declaration
         // and not Statements here ? See page 130
-        fn block(&mut self) -> Result<Vec<Declaration>, ParseError> {
+        fn block(&mut self) -> Result<Vec<DeclarationWithLineNo>, ParseError> {
             // assumption: left brace has already been consumed
             let mut result = vec![];
             while self.peek().typ != RightBrace && !self.is_at_end() {
+                let lineno = self.peek().line;
                 let decl = self.declaration()?;
-                result.push(decl);
+                result.push(DeclarationWithLineNo { decl, lineno });
             }
             self.consume(&RightBrace, "Expect '}' after block.")?;
             Ok(result)
