@@ -169,6 +169,13 @@ impl VM {
                     let local_value = self.get_local(local_index);
                     self.push(local_value);
                 }
+                OpCode::OpJumpIfFalse => {
+                    let condition_value = self.pop();
+                    let jump: usize = self.read_byte().into();
+                    if condition_value.is_false() {
+                        self.ip += jump;
+                    }
+                }
                 OpCode::OpEof => {
                     return Ok(());
                 }
@@ -207,7 +214,7 @@ impl VM {
     }
 
     fn get_local(&self, index: u8) -> Value {
-        let usize_index: usize = index.try_into().unwrap();
+        let usize_index: usize = index.into();
         self.stack[usize_index].clone()
     }
 

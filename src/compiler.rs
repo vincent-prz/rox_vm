@@ -1,5 +1,5 @@
 use crate::ast::{
-    Binary, Declaration, DeclarationWithLineNo, Expr, LetDecl, Literal, Logical, Program,
+    Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal, Logical, Program,
     Statement, Unary, Variable,
 };
 use crate::chunk::{Chunk, OpCode};
@@ -53,12 +53,23 @@ impl<'a> Compiler<'a> {
     fn statement(&mut self, statement: Statement) -> Result<(), String> {
         match statement {
             Statement::ExprStmt(expr) => self.expression(expr),
-            Statement::IfStmt(_) => todo!(),
+            Statement::IfStmt(if_stmt) => self.if_statement(if_stmt),
             Statement::PrintStmt(expr) => self.print_statement(expr),
             Statement::ReturnStmt(_) => self.return_statement(),
             Statement::WhileStmt(_) => todo!(),
             Statement::Block(declarations) => self.block(declarations),
         }
+    }
+
+    fn if_statement(&mut self, if_stmt: IfStmt) -> Result<(), String> {
+        self.expression(if_stmt.condition)?;
+        self.emit_byte(OpCode::OpJumpIfFalse as u8);
+        // let's keep track of the index of the jump operand, and temporarily put 0 there
+        let jump_index = self.current_chunk.count();
+        self.emit_byte(0);
+        self.statement(*if_stmt.then_branch)?;
+        self.replace_byte_at(self.current_chunk.count().try_into().unwrap(), jump_index);
+        Ok(())
     }
 
     fn expression(&mut self, expr: Expr) -> Result<(), String> {
@@ -251,6 +262,10 @@ impl<'a> Compiler<'a> {
     fn emit_bytes(&mut self, byte1: u8, byte2: u8) {
         self.emit_byte(byte1);
         self.emit_byte(byte2);
+    }
+
+    fn replace_byte_at(&mut self, byte: u8, write_index: usize) {
+        self.current_chunk.replace_at(byte, write_index);
     }
 
     fn emit_constant(&mut self, value: Value) {

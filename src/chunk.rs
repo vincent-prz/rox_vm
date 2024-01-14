@@ -27,6 +27,7 @@ pub enum OpCode {
     OpPop,
     OpPopN,
     OpGetLocal,
+    OpJumpIfFalse,
     OpEof,
 }
 
@@ -68,6 +69,7 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpPop as u8 => Ok(OpCode::OpPop),
             x if x == OpCode::OpPopN as u8 => Ok(OpCode::OpPopN),
             x if x == OpCode::OpGetLocal as u8 => Ok(OpCode::OpGetLocal),
+            x if x == OpCode::OpJumpIfFalse as u8 => Ok(OpCode::OpJumpIfFalse),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
@@ -96,6 +98,10 @@ impl Chunk {
     pub fn write(&mut self, op_code: u8, lineno: usize) {
         self.code.push(op_code);
         self.line_info.add(self.count() - 1, lineno);
+    }
+
+    pub fn replace_at(&mut self, op_code: u8, write_index: usize) {
+        self.code[write_index] = op_code;
     }
 
     pub fn add_constant(&mut self, value: Value) -> u8 {
@@ -211,6 +217,7 @@ impl Chunk {
             OpCode::OpPop => self.simple_instruction("OP_POP", offset),
             OpCode::OpPopN => self.instruction_with_operand("OP_POPN", offset),
             OpCode::OpGetLocal => self.instruction_with_operand("OP_GET_LOCAL", offset),
+            OpCode::OpJumpIfFalse => self.instruction_with_operand("OP_JUMP_IF_FALSE", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }
