@@ -169,11 +169,12 @@ impl VM {
                     let local_value = self.get_local(local_index);
                     self.push(local_value);
                 }
+                OpCode::OpJump => {
+                    self.ip += self.read_short() as usize;
+                }
                 OpCode::OpJumpIfFalse => {
                     let condition_value = self.pop();
-                    let jump_byte_1: u16 = self.read_byte().into();
-                    let jump_byte_2: u16 = self.read_byte().into();
-                    let jump: usize = ((jump_byte_1 << 8) | jump_byte_2) as usize;
+                    let jump: usize = self.read_short() as usize;
                     if condition_value.is_false() {
                         self.ip += jump;
                     }
@@ -222,6 +223,12 @@ impl VM {
 
     fn reset_stack(&mut self) {
         self.stack.clear();
+    }
+
+    fn read_short(&mut self) -> u16 {
+        let x: u16 = self.read_byte().into();
+        let y: u16 = self.read_byte().into();
+        (x << 8) | y
     }
 
     fn runtime_error(&mut self, msg: String) -> RuntimeError {

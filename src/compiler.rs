@@ -65,7 +65,27 @@ impl<'a> Compiler<'a> {
         self.expression(if_stmt.condition)?;
         let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
         self.statement(*if_stmt.then_branch)?;
-        self.patch_jump(jump_offset);
+        match if_stmt.else_branch {
+            // compiles code of the form:
+            // addr: JUMP_IF_FALSE to addr2 + 3
+            // jump_operand 1
+            // jump_operand 2
+            // ... then code
+            // addr2: JUMP to addr3
+            // jump_operand 1
+            // jump_operand 2
+            // ... else code
+            // addr3
+            Some(else_branch) => {
+                let else_jump_offset = self.emit_jump(OpCode::OpJump as u8);
+                self.patch_jump(jump_offset);
+                self.statement(*else_branch)?;
+                self.patch_jump(else_jump_offset);
+            },
+            None => {
+                self.patch_jump(jump_offset);
+            },
+        }
         Ok(())
     }
 
@@ -261,10 +281,6 @@ impl<'a> Compiler<'a> {
         self.emit_byte(byte2);
     }
 
-    fn replace_byte_at(&mut self, byte: u8, write_index: usize) {
-        self.current_chunk.replace_at(byte, write_index);
-    }
-
     fn emit_constant(&mut self, value: Value) {
         let constant = self.make_constant(value);
         self.emit_bytes(OpCode::OpConstant as u8, constant);
@@ -277,6 +293,7 @@ impl<'a> Compiler<'a> {
         self.current_chunk.count() - 2
     }
 
+    /// fill jump operand specified at offset, namely jump to current location
     fn patch_jump(&mut self, offset: usize) {
         let jump = self.current_chunk.count() - offset - 2;
         self.current_chunk

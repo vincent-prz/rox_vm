@@ -27,6 +27,7 @@ pub enum OpCode {
     OpPop,
     OpPopN,
     OpGetLocal,
+    OpJump,
     OpJumpIfFalse,
     OpEof,
 }
@@ -69,6 +70,7 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpPop as u8 => Ok(OpCode::OpPop),
             x if x == OpCode::OpPopN as u8 => Ok(OpCode::OpPopN),
             x if x == OpCode::OpGetLocal as u8 => Ok(OpCode::OpGetLocal),
+            x if x == OpCode::OpJump as u8 => Ok(OpCode::OpJump),
             x if x == OpCode::OpJumpIfFalse as u8 => Ok(OpCode::OpJumpIfFalse),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
@@ -217,6 +219,7 @@ impl Chunk {
             OpCode::OpPop => self.simple_instruction("OP_POP", offset),
             OpCode::OpPopN => self.instruction_with_operand("OP_POPN", offset),
             OpCode::OpGetLocal => self.instruction_with_operand("OP_GET_LOCAL", offset),
+            OpCode::OpJump => self.jump_instruction("OP_JUMP", 1, offset),
             OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
