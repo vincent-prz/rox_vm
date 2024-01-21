@@ -171,7 +171,9 @@ impl VM {
                 }
                 OpCode::OpJumpIfFalse => {
                     let condition_value = self.pop();
-                    let jump: usize = self.read_byte().into();
+                    let jump_byte_1: u16 = self.read_byte().into();
+                    let jump_byte_2: u16 = self.read_byte().into();
+                    let jump: usize = ((jump_byte_1 << 8) | jump_byte_2) as usize;
                     if condition_value.is_false() {
                         self.ip += jump;
                     }

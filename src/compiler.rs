@@ -63,12 +63,9 @@ impl<'a> Compiler<'a> {
 
     fn if_statement(&mut self, if_stmt: IfStmt) -> Result<(), String> {
         self.expression(if_stmt.condition)?;
-        self.emit_byte(OpCode::OpJumpIfFalse as u8);
-        // let's keep track of the index of the jump operand, and temporarily put 0 there
-        let jump_index = self.current_chunk.count();
-        self.emit_byte(0);
+        let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
         self.statement(*if_stmt.then_branch)?;
-        self.replace_byte_at(self.current_chunk.count().try_into().unwrap(), jump_index);
+        self.patch_jump(jump_offset);
         Ok(())
     }
 
@@ -271,6 +268,21 @@ impl<'a> Compiler<'a> {
     fn emit_constant(&mut self, value: Value) {
         let constant = self.make_constant(value);
         self.emit_bytes(OpCode::OpConstant as u8, constant);
+    }
+
+    fn emit_jump(&mut self, instruction: u8) -> usize {
+        self.emit_byte(instruction);
+        self.emit_byte(0);
+        self.emit_byte(0);
+        self.current_chunk.count() - 2
+    }
+
+    fn patch_jump(&mut self, offset: usize) {
+        let jump = self.current_chunk.count() - offset - 2;
+        self.current_chunk
+            .replace_at((jump >> 8).try_into().unwrap(), offset);
+        self.current_chunk
+            .replace_at((jump & 0xff).try_into().unwrap(), offset + 1);
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {

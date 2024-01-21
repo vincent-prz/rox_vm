@@ -217,7 +217,7 @@ impl Chunk {
             OpCode::OpPop => self.simple_instruction("OP_POP", offset),
             OpCode::OpPopN => self.instruction_with_operand("OP_POPN", offset),
             OpCode::OpGetLocal => self.instruction_with_operand("OP_GET_LOCAL", offset),
-            OpCode::OpJumpIfFalse => self.instruction_with_operand("OP_JUMP_IF_FALSE", offset),
+            OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }
@@ -230,6 +230,17 @@ impl Chunk {
         let operand = self.code[offset + 1];
         println!("{:<16} {}", name, operand);
         offset + 2
+    }
+
+    fn jump_instruction(&self, name: &str, sign: i32, offset: usize) -> usize {
+        let jump: u16 = (self.code[offset + 1] as u16) << 8 | (self.code[offset + 2] as u16);
+        println!(
+            "{:<16} {} -> {}",
+            name,
+            offset,
+            (offset + 3) as i32 + sign * (jump as i32)
+        );
+        offset + 3
     }
 
     fn constant_instruction(&self, name: &str, offset: usize) -> usize {
