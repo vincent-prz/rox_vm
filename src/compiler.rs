@@ -61,31 +61,31 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// compiles code of the form:
+    /// addr: JUMP_IF_FALSE to addr2 + 3
+    /// jump_operand 1
+    /// jump_operand 2
+    /// ... then code
+    /// addr2: JUMP to addr3
+    /// jump_operand 1
+    /// jump_operand 2
+    /// ... else code
+    /// addr3
     fn if_statement(&mut self, if_stmt: IfStmt) -> Result<(), String> {
         self.expression(if_stmt.condition)?;
-        let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+        let then_jump = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+        // clean up condition value
+        self.emit_byte(OpCode::OpPop as u8);
         self.statement(*if_stmt.then_branch)?;
-        match if_stmt.else_branch {
-            // compiles code of the form:
-            // addr: JUMP_IF_FALSE to addr2 + 3
-            // jump_operand 1
-            // jump_operand 2
-            // ... then code
-            // addr2: JUMP to addr3
-            // jump_operand 1
-            // jump_operand 2
-            // ... else code
-            // addr3
-            Some(else_branch) => {
-                let else_jump_offset = self.emit_jump(OpCode::OpJump as u8);
-                self.patch_jump(jump_offset);
-                self.statement(*else_branch)?;
-                self.patch_jump(else_jump_offset);
-            },
-            None => {
-                self.patch_jump(jump_offset);
-            },
+        let else_jump = self.emit_jump(OpCode::OpJump as u8);
+
+        self.patch_jump(then_jump);
+        // clean up condition value
+        self.emit_byte(OpCode::OpPop as u8);
+        if let Some(else_branch) = if_stmt.else_branch {
+            self.statement(*else_branch)?;
         }
+        self.patch_jump(else_jump);
         Ok(())
     }
 

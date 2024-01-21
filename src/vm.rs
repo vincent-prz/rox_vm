@@ -173,9 +173,9 @@ impl VM {
                     self.ip += self.read_short() as usize;
                 }
                 OpCode::OpJumpIfFalse => {
-                    let condition_value = self.pop();
+                    let condition_is_false = self.peek(0).is_false();
                     let jump: usize = self.read_short() as usize;
-                    if condition_value.is_false() {
+                    if condition_is_false {
                         self.ip += jump;
                     }
                 }
@@ -205,6 +205,10 @@ impl VM {
 
     fn push(&mut self, value: Value) {
         self.stack.push(value);
+    }
+
+    fn peek(&self, offset: usize) -> &Value {
+        &self.stack[self.stack.len() - 1 - offset]
     }
 
     fn pop(&mut self) -> Value {
