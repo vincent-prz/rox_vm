@@ -18,7 +18,11 @@ impl fmt::Display for Value {
 }
 
 impl Value {
-    pub fn is_false(&self) -> bool {
-        *self == Value::Boolean(false)
+    pub fn is_falsey(&self) -> bool {
+        match self {
+            Value::Number(n) => *n == 0.0,
+            Value::Boolean(b) => !b,
+            Value::Str(s) => s == "",
+        }
     }
 }

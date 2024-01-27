@@ -165,7 +165,7 @@ impl<'a> Compiler<'a> {
                 self.emit_byte(OpCode::OpPop as u8);
                 self.expression(*op.right)?;
                 self.patch_jump(jump_offset)
-            },
+            }
             TokenType::Or => {
                 // JIF to x
                 // J to y
@@ -174,13 +174,12 @@ impl<'a> Compiler<'a> {
                 // right
                 // y:
                 let jump_left_false = self.emit_jump(OpCode::OpJumpIfFalse as u8);
-                let jump_left_true= self.emit_jump(OpCode::OpJump as u8);
+                let jump_left_true = self.emit_jump(OpCode::OpJump as u8);
                 self.patch_jump(jump_left_false);
                 self.emit_byte(OpCode::OpPop as u8);
                 self.expression(*op.right)?;
                 self.patch_jump(jump_left_true);
-
-            },
+            }
             _ => Err(format!(
                 "Unexpected logical operator: {} at line {}",
                 op.operator.lexeme, op.operator.line
