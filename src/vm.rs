@@ -155,6 +155,13 @@ impl VM {
                 OpCode::OpJump => {
                     self.ip += self.read_short() as usize;
                 }
+                OpCode::OpJumpIfTrue => {
+                    let condition_is_truthy = self.peek(0).is_truthy();
+                    let jump: usize = self.read_short() as usize;
+                    if condition_is_truthy {
+                        self.ip += jump;
+                    }
+                }
                 OpCode::OpJumpIfFalse => {
                     let condition_is_falsey = self.peek(0).is_falsey();
                     let jump: usize = self.read_short() as usize;

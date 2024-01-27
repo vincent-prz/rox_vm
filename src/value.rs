@@ -25,4 +25,8 @@ impl Value {
             Value::Str(s) => s == "",
         }
     }
+
+    pub fn is_truthy(&self) -> bool {
+        !self.is_falsey()
+    }
 }
