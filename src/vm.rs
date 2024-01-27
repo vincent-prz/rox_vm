@@ -28,21 +28,6 @@ macro_rules! binary_op {
     }};
 }
 
-macro_rules! logical_op {
-    ($self:expr, $op:tt) => {{
-        let b = $self.pop();
-        let a = $self.pop();
-        match (a, b) {
-            (Value::Boolean(x), Value::Boolean(y)) => {
-                $self.push(Value::Boolean(x $op y));
-            },
-            _ => {
-                Err($self.runtime_error("Operands must be booleans".to_string()))?;
-            }
-        }
-    }};
-}
-
 impl VM {
     pub fn new() -> Self {
         VM {
@@ -131,8 +116,6 @@ impl VM {
                         _ => Err(self.runtime_error("Operand must be a boolean".to_string()))?,
                     }
                 }
-                OpCode::OpAnd => logical_op!(self, &&),
-                OpCode::OpOr => logical_op!(self, ||),
                 OpCode::OpPrint => {
                     println!("{}", self.pop());
                 }

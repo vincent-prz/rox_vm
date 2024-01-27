@@ -159,16 +159,33 @@ impl<'a> Compiler<'a> {
 
     fn logical(&mut self, op: Logical) -> Result<(), String> {
         self.expression(*op.left)?;
-        self.expression(*op.right)?;
-        let op_code = match op.operator.typ {
-            TokenType::And => OpCode::OpAnd,
-            TokenType::Or => OpCode::OpOr,
+        match op.operator.typ {
+            TokenType::And => {
+                let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+                self.emit_byte(OpCode::OpPop as u8);
+                self.expression(*op.right)?;
+                self.patch_jump(jump_offset)
+            },
+            TokenType::Or => {
+                // JIF to x
+                // J to y
+                // x:
+                // POP
+                // right
+                // y:
+                let jump_left_false = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+                let jump_left_true= self.emit_jump(OpCode::OpJump as u8);
+                self.patch_jump(jump_left_false);
+                self.emit_byte(OpCode::OpPop as u8);
+                self.expression(*op.right)?;
+                self.patch_jump(jump_left_true);
+
+            },
             _ => Err(format!(
                 "Unexpected logical operator: {} at line {}",
                 op.operator.lexeme, op.operator.line
             ))?,
-        };
-        self.emit_byte(op_code as u8);
+        }
         Ok(())
     }
 
