@@ -1,5 +1,6 @@
 use crate::ast::{
-    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal, Logical, Program, Statement, Unary, Variable, WhileStmt
+    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal,
+    Logical, Program, Statement, Unary, Variable, WhileStmt,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
@@ -233,11 +234,11 @@ impl<'a> Compiler<'a> {
         match self.resolve_local(&assignment.name) {
             Some(local_index) => {
                 self.emit_bytes(OpCode::OpSetLocal as u8, local_index.try_into().unwrap());
-            },
+            }
             None => {
                 let constant = self.make_constant(Value::Str(assignment.name.lexeme));
                 self.emit_bytes(OpCode::OpSetGlobal as u8, constant);
-            },
+            }
         }
         Ok(())
     }
