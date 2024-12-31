@@ -1,6 +1,5 @@
 use crate::ast::{
-    Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal, Logical, Program,
-    Statement, Unary, Variable,
+    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal, Logical, Program, Statement, Unary, Variable, WhileStmt
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
@@ -56,7 +55,7 @@ impl<'a> Compiler<'a> {
             Statement::IfStmt(if_stmt) => self.if_statement(if_stmt),
             Statement::PrintStmt(expr) => self.print_statement(expr),
             Statement::ReturnStmt(_) => self.return_statement(),
-            Statement::WhileStmt(_) => todo!(),
+            Statement::WhileStmt(while_stmt) => self.while_statement(while_stmt),
             Statement::Block(declarations) => self.block(declarations),
         }
     }
@@ -97,7 +96,7 @@ impl<'a> Compiler<'a> {
             Expr::Call(_) => todo!(),
             Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(variable) => self.variable(variable),
-            Expr::Assignment(_) => Err(self.report_error("Assignment not supported".to_string())),
+            Expr::Assignment(assignment) => self.assignment(assignment),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Get(_) => todo!(),
             Expr::Set(_) => Err(self.report_error("Set not supported".to_string())),
@@ -191,6 +190,17 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn while_statement(&mut self, while_stmt: WhileStmt) -> Result<(), String> {
+        let loop_start = self.current_chunk.count();
+        self.expression(while_stmt.condition)?;
+        let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+        self.emit_byte(OpCode::OpPop as u8);
+        self.statement(*(while_stmt.body))?;
+        self.emit_loop(loop_start);
+        self.patch_jump(jump_offset);
+        Ok(())
+    }
+
     fn let_decl(&mut self, decl: LetDecl) -> Result<(), String> {
         // FIXME: allow absence of initializer
         let initializer = decl
@@ -215,6 +225,20 @@ impl<'a> Compiler<'a> {
                 self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
             }
         };
+        Ok(())
+    }
+
+    fn assignment(&mut self, assignment: Assignment) -> Result<(), String> {
+        self.expression(*assignment.value)?;
+        match self.resolve_local(&assignment.name) {
+            Some(local_index) => {
+                self.emit_bytes(OpCode::OpSetLocal as u8, local_index.try_into().unwrap());
+            },
+            None => {
+                let constant = self.make_constant(Value::Str(assignment.name.lexeme));
+                self.emit_bytes(OpCode::OpSetGlobal as u8, constant);
+            },
+        }
         Ok(())
     }
 
@@ -305,9 +329,17 @@ impl<'a> Compiler<'a> {
     fn patch_jump(&mut self, offset: usize) {
         let jump = self.current_chunk.count() - offset - 2;
         self.current_chunk
-            .replace_at((jump >> 8).try_into().unwrap(), offset);
+            .replace_at((jump >> 8 & 0xff).try_into().unwrap(), offset);
         self.current_chunk
             .replace_at((jump & 0xff).try_into().unwrap(), offset + 1);
+    }
+
+    fn emit_loop(&mut self, start_loop: usize) -> usize {
+        self.emit_byte(OpCode::OpLoop as u8);
+        let loop_size = self.current_chunk.count() - start_loop + 2;
+        self.emit_byte((loop_size >> 8 & 0xff).try_into().unwrap());
+        self.emit_byte((loop_size & 0xff).try_into().unwrap());
+        self.current_chunk.count() - 2
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {

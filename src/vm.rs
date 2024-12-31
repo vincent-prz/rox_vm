@@ -140,6 +140,18 @@ impl VM {
                         Err(self.runtime_error("Expected string constant".to_string()))?;
                     }
                 }
+                OpCode::OpSetGlobal => {
+                    let constant = self.read_constant();
+                    if let Value::Str(constant) = constant {
+                        if self.globals.contains_key(&constant) {
+                            self.globals.insert(constant, self.peek(0).clone());
+                        } else {
+                            Err(self.runtime_error(format!("Undefined variable '{}'", constant)))?;
+                        }
+                    } else {
+                        Err(self.runtime_error("Expected string constant".to_string()))?;
+                    }
+                }
                 OpCode::OpPop => {
                     self.pop();
                 }
@@ -151,6 +163,11 @@ impl VM {
                     let local_index = self.read_byte();
                     let local_value = self.get_local(local_index);
                     self.push(local_value);
+                }
+                OpCode::OpSetLocal => {
+                    let local_index = self.read_byte();
+                    let usize_index: usize = local_index.into();
+                    self.stack[usize_index] = self.peek(0).clone();
                 }
                 OpCode::OpJump => {
                     self.ip += self.read_short() as usize;
@@ -168,6 +185,9 @@ impl VM {
                     if condition_is_falsey {
                         self.ip += jump;
                     }
+                }
+                OpCode::OpLoop => {
+                    self.ip -= self.read_short() as usize;
                 }
                 OpCode::OpEof => {
                     return Ok(());
