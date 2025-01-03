@@ -57,7 +57,8 @@ impl VM {
                 println!("");
                 self.unwrap_chunk().disassemble_instruction(self.ip);
             }
-            let instruction = OpCode::new(self.read_byte());
+
+            let instruction = self.read_byte().try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
                     let constant = self.read_constant();

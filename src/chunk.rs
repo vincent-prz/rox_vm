@@ -34,14 +34,6 @@ pub enum OpCode {
     OpEof,
 }
 
-impl OpCode {
-    pub fn new(byte: u8) -> Self {
-        // [perf] - try_into might incurr an avoidable perf penalty
-        byte.try_into()
-            .expect(&format!("Could not decode byte {}", byte))
-    }
-}
-
 // allows cast from u8 to OpCode
 impl TryFrom<u8> for OpCode {
     type Error = ();
@@ -197,7 +189,7 @@ impl Chunk {
             print!("{:4} ", current_lineno);
         }
 
-        let instruction: &OpCode = &OpCode::new(self.read_byte(offset));
+        let instruction: OpCode = self.read_byte(offset).try_into().unwrap();
         match instruction {
             OpCode::OpReturn => self.simple_instruction("OP_RETURN", offset),
             OpCode::OpAdd => self.simple_instruction("OP_ADD", offset),
