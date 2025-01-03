@@ -147,7 +147,10 @@ impl VM {
                         if self.globals.contains_key(&constant) {
                             self.globals.insert(constant, self.peek(0).clone());
                         } else {
-                            Err(self.runtime_error(format!("Cannot assign undefined variable {}.", constant)))?;
+                            Err(self.runtime_error(format!(
+                                "Cannot assign undefined variable {}.",
+                                constant
+                            )))?;
                         }
                     } else {
                         Err(self.runtime_error("Expected string constant".to_string()))?;
