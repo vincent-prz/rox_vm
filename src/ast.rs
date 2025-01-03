@@ -516,6 +516,7 @@ pub mod parser {
         }
 
         fn for_stmt(&mut self) -> Result<Statement, ParseError> {
+            let for_line_no = self.peek().line;
             self.advance(); // discard for token
             self.consume(&LeftParen, "Expect '(' after for.")?;
             let token = self.peek().clone();
@@ -566,11 +567,11 @@ pub mod parser {
                 Some(var_decl) => Statement::Block(vec![
                     DeclarationWithLineNo {
                         decl: var_decl,
-                        lineno,
+                        lineno: for_line_no,
                     },
                     DeclarationWithLineNo {
                         decl: Declaration::Statement(Statement::WhileStmt(while_stmt)),
-                        lineno,
+                        lineno: for_line_no,
                     },
                 ]),
             })
