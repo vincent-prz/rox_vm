@@ -1,0 +1,5 @@
+{
+    let a = true;
+    let b = false;
+    print(a or b);
+}
