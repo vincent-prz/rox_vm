@@ -1,0 +1,3 @@
+// this test is actually not testing short circuitery
+1 == 1 and 1;
+print "Ok";

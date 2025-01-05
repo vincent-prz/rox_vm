@@ -28,21 +28,6 @@ macro_rules! binary_op {
     }};
 }
 
-macro_rules! logical_op {
-    ($self:expr, $op:tt) => {{
-        let b = $self.pop();
-        let a = $self.pop();
-        match (a, b) {
-            (Value::Boolean(x), Value::Boolean(y)) => {
-                $self.push(Value::Boolean(x $op y));
-            },
-            _ => {
-                Err($self.runtime_error("Operands must be booleans".to_string()))?;
-            }
-        }
-    }};
-}
-
 impl VM {
     pub fn new() -> Self {
         VM {
@@ -131,8 +116,6 @@ impl VM {
                         _ => Err(self.runtime_error("Operand must be a boolean".to_string()))?,
                     }
                 }
-                OpCode::OpAnd => logical_op!(self, &&),
-                OpCode::OpOr => logical_op!(self, ||),
                 OpCode::OpPrint => {
                     println!("{}", self.pop());
                 }
@@ -157,6 +140,18 @@ impl VM {
                         Err(self.runtime_error("Expected string constant".to_string()))?;
                     }
                 }
+                OpCode::OpSetGlobal => {
+                    let constant = self.read_constant();
+                    if let Value::Str(constant) = constant {
+                        if self.globals.contains_key(&constant) {
+                            self.globals.insert(constant, self.peek(0).clone());
+                        } else {
+                            Err(self.runtime_error(format!("Undefined variable '{}'", constant)))?;
+                        }
+                    } else {
+                        Err(self.runtime_error("Expected string constant".to_string()))?;
+                    }
+                }
                 OpCode::OpPop => {
                     self.pop();
                 }
@@ -168,6 +163,31 @@ impl VM {
                     let local_index = self.read_byte();
                     let local_value = self.get_local(local_index);
                     self.push(local_value);
+                }
+                OpCode::OpSetLocal => {
+                    let local_index = self.read_byte();
+                    let usize_index: usize = local_index.into();
+                    self.stack[usize_index] = self.peek(0).clone();
+                }
+                OpCode::OpJump => {
+                    self.ip += self.read_short() as usize;
+                }
+                OpCode::OpJumpIfTrue => {
+                    let condition_is_truthy = self.peek(0).is_truthy();
+                    let jump: usize = self.read_short() as usize;
+                    if condition_is_truthy {
+                        self.ip += jump;
+                    }
+                }
+                OpCode::OpJumpIfFalse => {
+                    let condition_is_falsey = self.peek(0).is_falsey();
+                    let jump: usize = self.read_short() as usize;
+                    if condition_is_falsey {
+                        self.ip += jump;
+                    }
+                }
+                OpCode::OpLoop => {
+                    self.ip -= self.read_short() as usize;
                 }
                 OpCode::OpEof => {
                     return Ok(());
@@ -197,6 +217,10 @@ impl VM {
         self.stack.push(value);
     }
 
+    fn peek(&self, offset: usize) -> &Value {
+        &self.stack[self.stack.len() - 1 - offset]
+    }
+
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Tried to pop on empty stack")
     }
@@ -207,12 +231,18 @@ impl VM {
     }
 
     fn get_local(&self, index: u8) -> Value {
-        let usize_index: usize = index.try_into().unwrap();
+        let usize_index: usize = index.into();
         self.stack[usize_index].clone()
     }
 
     fn reset_stack(&mut self) {
         self.stack.clear();
+    }
+
+    fn read_short(&mut self) -> u16 {
+        let x: u16 = self.read_byte().into();
+        let y: u16 = self.read_byte().into();
+        (x << 8) | y
     }
 
     fn runtime_error(&mut self, msg: String) -> RuntimeError {

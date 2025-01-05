@@ -1,0 +1,11 @@
+if (1 == 2) {
+    print "this should not be printed";
+} else {
+    print "Bingo !";
+}
+
+if (1 + 1 == 2) {
+    print "Bingo 2 !";
+} else {
+    print "you lose";
+}

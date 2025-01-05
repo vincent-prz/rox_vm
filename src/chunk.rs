@@ -14,8 +14,6 @@ pub enum OpCode {
     OpTrue,
     OpFalse,
     OpNot,
-    OpAnd,
-    OpOr,
     OpEqualEqual,
     OpBangEqual,
     OpLess,
@@ -24,9 +22,15 @@ pub enum OpCode {
     OpGreaterEqual,
     OpDefineGlobal,
     OpGetGlobal,
+    OpSetGlobal,
     OpPop,
     OpPopN,
     OpGetLocal,
+    OpSetLocal,
+    OpJump,
+    OpJumpIfTrue,
+    OpJumpIfFalse,
+    OpLoop,
     OpEof,
 }
 
@@ -55,8 +59,6 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpTrue as u8 => Ok(OpCode::OpTrue),
             x if x == OpCode::OpFalse as u8 => Ok(OpCode::OpFalse),
             x if x == OpCode::OpNot as u8 => Ok(OpCode::OpNot),
-            x if x == OpCode::OpAnd as u8 => Ok(OpCode::OpAnd),
-            x if x == OpCode::OpOr as u8 => Ok(OpCode::OpOr),
             x if x == OpCode::OpEqualEqual as u8 => Ok(OpCode::OpEqualEqual),
             x if x == OpCode::OpBangEqual as u8 => Ok(OpCode::OpBangEqual),
             x if x == OpCode::OpLess as u8 => Ok(OpCode::OpLess),
@@ -65,9 +67,15 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpGreaterEqual as u8 => Ok(OpCode::OpGreaterEqual),
             x if x == OpCode::OpDefineGlobal as u8 => Ok(OpCode::OpDefineGlobal),
             x if x == OpCode::OpGetGlobal as u8 => Ok(OpCode::OpGetGlobal),
+            x if x == OpCode::OpSetGlobal as u8 => Ok(OpCode::OpSetGlobal),
             x if x == OpCode::OpPop as u8 => Ok(OpCode::OpPop),
             x if x == OpCode::OpPopN as u8 => Ok(OpCode::OpPopN),
             x if x == OpCode::OpGetLocal as u8 => Ok(OpCode::OpGetLocal),
+            x if x == OpCode::OpSetLocal as u8 => Ok(OpCode::OpSetLocal),
+            x if x == OpCode::OpJump as u8 => Ok(OpCode::OpJump),
+            x if x == OpCode::OpJumpIfTrue as u8 => Ok(OpCode::OpJumpIfTrue),
+            x if x == OpCode::OpJumpIfFalse as u8 => Ok(OpCode::OpJumpIfFalse),
+            x if x == OpCode::OpLoop as u8 => Ok(OpCode::OpLoop),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
@@ -96,6 +104,10 @@ impl Chunk {
     pub fn write(&mut self, op_code: u8, lineno: usize) {
         self.code.push(op_code);
         self.line_info.add(self.count() - 1, lineno);
+    }
+
+    pub fn replace_at(&mut self, op_code: u8, write_index: usize) {
+        self.code[write_index] = op_code;
     }
 
     pub fn add_constant(&mut self, value: Value) -> u8 {
@@ -198,8 +210,6 @@ impl Chunk {
             OpCode::OpTrue => self.simple_instruction("OP_TRUE", offset),
             OpCode::OpFalse => self.simple_instruction("OP_FALSE", offset),
             OpCode::OpNot => self.simple_instruction("OP_NOT", offset),
-            OpCode::OpAnd => self.simple_instruction("OP_AND", offset),
-            OpCode::OpOr => self.simple_instruction("OP_OR", offset),
             OpCode::OpEqualEqual => self.simple_instruction("OP_EQUAL_EQUAL", offset),
             OpCode::OpBangEqual => self.simple_instruction("OP_BANG_EQUAL", offset),
             OpCode::OpLess => self.simple_instruction("OP_LESS", offset),
@@ -208,9 +218,15 @@ impl Chunk {
             OpCode::OpGreaterEqual => self.simple_instruction("OP_GREATER_EQUAL", offset),
             OpCode::OpDefineGlobal => self.constant_instruction("OP_DEFINE_GLOBAL", offset),
             OpCode::OpGetGlobal => self.constant_instruction("OP_GET_GLOBAL", offset),
+            OpCode::OpSetGlobal => self.constant_instruction("OP_SET_GLOBAL", offset),
             OpCode::OpPop => self.simple_instruction("OP_POP", offset),
             OpCode::OpPopN => self.instruction_with_operand("OP_POPN", offset),
             OpCode::OpGetLocal => self.instruction_with_operand("OP_GET_LOCAL", offset),
+            OpCode::OpSetLocal => self.instruction_with_operand("OP_SET_LOCAL", offset),
+            OpCode::OpJump => self.jump_instruction("OP_JUMP", 1, offset),
+            OpCode::OpJumpIfTrue => self.jump_instruction("OP_JUMP_IF_TRUE", 1, offset),
+            OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
+            OpCode::OpLoop => self.jump_instruction("OP_LOOP", -1, offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }
@@ -223,6 +239,17 @@ impl Chunk {
         let operand = self.code[offset + 1];
         println!("{:<16} {}", name, operand);
         offset + 2
+    }
+
+    fn jump_instruction(&self, name: &str, sign: i32, offset: usize) -> usize {
+        let jump: u16 = (self.code[offset + 1] as u16) << 8 | (self.code[offset + 2] as u16);
+        println!(
+            "{:<16} {} -> {}",
+            name,
+            offset,
+            (offset + 3) as i32 + sign * (jump as i32)
+        );
+        offset + 3
     }
 
     fn constant_instruction(&self, name: &str, offset: usize) -> usize {

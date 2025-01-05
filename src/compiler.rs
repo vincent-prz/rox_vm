@@ -1,6 +1,6 @@
 use crate::ast::{
-    Binary, Declaration, DeclarationWithLineNo, Expr, LetDecl, Literal, Logical, Program,
-    Statement, Unary, Variable,
+    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal,
+    Logical, Program, Statement, Unary, Variable, WhileStmt,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
@@ -53,12 +53,40 @@ impl<'a> Compiler<'a> {
     fn statement(&mut self, statement: Statement) -> Result<(), String> {
         match statement {
             Statement::ExprStmt(expr) => self.expression(expr),
-            Statement::IfStmt(_) => todo!(),
+            Statement::IfStmt(if_stmt) => self.if_statement(if_stmt),
             Statement::PrintStmt(expr) => self.print_statement(expr),
             Statement::ReturnStmt(_) => self.return_statement(),
-            Statement::WhileStmt(_) => todo!(),
+            Statement::WhileStmt(while_stmt) => self.while_statement(while_stmt),
             Statement::Block(declarations) => self.block(declarations),
         }
+    }
+
+    /// compiles code of the form:
+    /// addr: JUMP_IF_FALSE to addr2 + 3
+    /// jump_operand 1
+    /// jump_operand 2
+    /// ... then code
+    /// addr2: JUMP to addr3
+    /// jump_operand 1
+    /// jump_operand 2
+    /// ... else code
+    /// addr3
+    fn if_statement(&mut self, if_stmt: IfStmt) -> Result<(), String> {
+        self.expression(if_stmt.condition)?;
+        let then_jump = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+        // clean up condition value
+        self.emit_byte(OpCode::OpPop as u8);
+        self.statement(*if_stmt.then_branch)?;
+        let else_jump = self.emit_jump(OpCode::OpJump as u8);
+
+        self.patch_jump(then_jump);
+        // clean up condition value
+        self.emit_byte(OpCode::OpPop as u8);
+        if let Some(else_branch) = if_stmt.else_branch {
+            self.statement(*else_branch)?;
+        }
+        self.patch_jump(else_jump);
+        Ok(())
     }
 
     fn expression(&mut self, expr: Expr) -> Result<(), String> {
@@ -69,7 +97,7 @@ impl<'a> Compiler<'a> {
             Expr::Call(_) => todo!(),
             Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(variable) => self.variable(variable),
-            Expr::Assignment(_) => Err(self.report_error("Assignment not supported".to_string())),
+            Expr::Assignment(assignment) => self.assignment(assignment),
             Expr::Logical(logical) => self.logical(logical),
             Expr::Get(_) => todo!(),
             Expr::Set(_) => Err(self.report_error("Set not supported".to_string())),
@@ -131,16 +159,24 @@ impl<'a> Compiler<'a> {
 
     fn logical(&mut self, op: Logical) -> Result<(), String> {
         self.expression(*op.left)?;
-        self.expression(*op.right)?;
-        let op_code = match op.operator.typ {
-            TokenType::And => OpCode::OpAnd,
-            TokenType::Or => OpCode::OpOr,
+        match op.operator.typ {
+            TokenType::And => {
+                let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+                self.emit_byte(OpCode::OpPop as u8);
+                self.expression(*op.right)?;
+                self.patch_jump(jump_offset)
+            }
+            TokenType::Or => {
+                let jump_offset = self.emit_jump(OpCode::OpJumpIfTrue as u8);
+                self.emit_byte(OpCode::OpPop as u8);
+                self.expression(*op.right)?;
+                self.patch_jump(jump_offset);
+            }
             _ => Err(format!(
                 "Unexpected logical operator: {} at line {}",
                 op.operator.lexeme, op.operator.line
             ))?,
-        };
-        self.emit_byte(op_code as u8);
+        }
         Ok(())
     }
 
@@ -152,6 +188,17 @@ impl<'a> Compiler<'a> {
     fn print_statement(&mut self, expr: Expr) -> Result<(), String> {
         self.expression(expr)?;
         self.emit_byte(OpCode::OpPrint as u8);
+        Ok(())
+    }
+
+    fn while_statement(&mut self, while_stmt: WhileStmt) -> Result<(), String> {
+        let loop_start = self.current_chunk.count();
+        self.expression(while_stmt.condition)?;
+        let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
+        self.emit_byte(OpCode::OpPop as u8);
+        self.statement(*(while_stmt.body))?;
+        self.emit_loop(loop_start);
+        self.patch_jump(jump_offset);
         Ok(())
     }
 
@@ -179,6 +226,20 @@ impl<'a> Compiler<'a> {
                 self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
             }
         };
+        Ok(())
+    }
+
+    fn assignment(&mut self, assignment: Assignment) -> Result<(), String> {
+        self.expression(*assignment.value)?;
+        match self.resolve_local(&assignment.name) {
+            Some(local_index) => {
+                self.emit_bytes(OpCode::OpSetLocal as u8, local_index.try_into().unwrap());
+            }
+            None => {
+                let constant = self.make_constant(Value::Str(assignment.name.lexeme));
+                self.emit_bytes(OpCode::OpSetGlobal as u8, constant);
+            }
+        }
         Ok(())
     }
 
@@ -256,6 +317,30 @@ impl<'a> Compiler<'a> {
     fn emit_constant(&mut self, value: Value) {
         let constant = self.make_constant(value);
         self.emit_bytes(OpCode::OpConstant as u8, constant);
+    }
+
+    fn emit_jump(&mut self, instruction: u8) -> usize {
+        self.emit_byte(instruction);
+        self.emit_byte(0);
+        self.emit_byte(0);
+        self.current_chunk.count() - 2
+    }
+
+    /// fill jump operand specified at offset, namely jump to current location
+    fn patch_jump(&mut self, offset: usize) {
+        let jump = self.current_chunk.count() - offset - 2;
+        self.current_chunk
+            .replace_at((jump >> 8 & 0xff).try_into().unwrap(), offset);
+        self.current_chunk
+            .replace_at((jump & 0xff).try_into().unwrap(), offset + 1);
+    }
+
+    fn emit_loop(&mut self, start_loop: usize) -> usize {
+        self.emit_byte(OpCode::OpLoop as u8);
+        let loop_size = self.current_chunk.count() - start_loop + 2;
+        self.emit_byte((loop_size >> 8 & 0xff).try_into().unwrap());
+        self.emit_byte((loop_size & 0xff).try_into().unwrap());
+        self.current_chunk.count() - 2
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {

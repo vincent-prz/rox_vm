@@ -1,0 +1,6 @@
+if (true) {
+  print "hello";
+}
+if (1 == 2) {
+  print "this should not be printed";
+}
