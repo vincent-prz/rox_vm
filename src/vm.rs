@@ -57,7 +57,8 @@ impl VM {
                 println!("");
                 self.unwrap_chunk().disassemble_instruction(self.ip);
             }
-            let instruction = OpCode::new(self.read_byte());
+
+            let instruction = self.read_byte().try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
                     let constant = self.read_constant();
@@ -146,7 +147,10 @@ impl VM {
                         if self.globals.contains_key(&constant) {
                             self.globals.insert(constant, self.peek(0).clone());
                         } else {
-                            Err(self.runtime_error(format!("Undefined variable '{}'", constant)))?;
+                            Err(self.runtime_error(format!(
+                                "Cannot assign undefined variable {}.",
+                                constant
+                            )))?;
                         }
                     } else {
                         Err(self.runtime_error("Expected string constant".to_string()))?;
