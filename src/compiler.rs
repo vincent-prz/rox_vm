@@ -204,6 +204,7 @@ impl<'a> Compiler<'a> {
         self.statement(*(while_stmt.body))?;
         self.emit_loop(loop_start);
         self.patch_jump(jump_offset);
+        self.emit_byte(OpCode::OpPop as u8);
         Ok(())
     }
 
