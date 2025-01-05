@@ -1,0 +1,8 @@
+for (let i = 0; i < 3; i = i + 1) {
+  print "line: ";
+  print i;
+  for (let j = 0; j < 3; j = j + 1) {
+    print "column: ";
+    print j;
+  }
+}
