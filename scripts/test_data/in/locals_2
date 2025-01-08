@@ -1,0 +1,6 @@
+{
+  let y = true;
+  y = false;
+  let x = 1;
+  print x;
+}

@@ -1,0 +1,6 @@
+{
+  // testing that 1=1 gets correctly popped out of the stack to avoid breaking locals (and a memory leak)
+  1 + 1;
+  let x = 1;
+  print x;
+}

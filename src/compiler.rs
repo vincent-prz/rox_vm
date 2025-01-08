@@ -52,7 +52,12 @@ impl<'a> Compiler<'a> {
 
     fn statement(&mut self, statement: Statement) -> Result<(), String> {
         match statement {
-            Statement::ExprStmt(expr) => self.expression(expr),
+            Statement::ExprStmt(expr) => {
+                // popping unused expression from the stack
+                self.expression(expr)?;
+                self.emit_byte(OpCode::OpPop as u8);
+                Ok(())
+            }
             Statement::IfStmt(if_stmt) => self.if_statement(if_stmt),
             Statement::PrintStmt(expr) => self.print_statement(expr),
             Statement::ReturnStmt(_) => self.return_statement(),
@@ -199,6 +204,7 @@ impl<'a> Compiler<'a> {
         self.statement(*(while_stmt.body))?;
         self.emit_loop(loop_start);
         self.patch_jump(jump_offset);
+        self.emit_byte(OpCode::OpPop as u8);
         Ok(())
     }
 
