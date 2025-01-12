@@ -74,6 +74,7 @@ impl TryFrom<u8> for OpCode {
     }
 }
 
+#[derive(Clone, PartialEq)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
@@ -128,6 +129,7 @@ impl Chunk {
 /// Line info is encoded with tuples like representing `(offset, lineno).`
 /// where offset is the first offset comprised in lineno.
 /// Assumption: offsets are added in ascending order.
+#[derive(Clone, PartialEq)]
 struct LineInfo {
     info: Vec<(usize, usize)>,
 }
