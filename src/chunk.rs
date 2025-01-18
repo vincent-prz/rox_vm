@@ -82,7 +82,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new() -> Chunk {
+    pub const fn new() -> Chunk {
         Chunk {
             code: Vec::new(),
             constants: Vec::new(),
@@ -135,7 +135,7 @@ struct LineInfo {
 }
 
 impl LineInfo {
-    fn new() -> LineInfo {
+    const fn new() -> LineInfo {
         LineInfo { info: Vec::new() }
     }
 

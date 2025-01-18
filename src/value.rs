@@ -47,7 +47,7 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Function {
             arity: 0,
             name: None,

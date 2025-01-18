@@ -1,16 +1,35 @@
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
-use crate::value::Value;
+use crate::value::{Function, Value};
+
+static FRAMES_MAX: usize = 64;
 
 pub struct VM {
-    chunk: Option<Chunk>,
+    frames: [CallFrame; FRAMES_MAX],
+    // FIXME: remove this
+    frame: CallFrame,
+    frame_count: usize,
+    // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
+    // [perf] FIXME: use fixed length array instead
+    stack: Vec<Value>,
+    globals: HashMap<String, Value>,
+}
+
+#[derive(Clone)]
+struct CallFrame {
+    function: Function,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
-    // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
-    stack: Vec<Value>,
-    globals: HashMap<String, Value>,
+    // [perf] FIXME: use fixed sized array
+    slots: Vec<Value>,
+}
+
+impl CallFrame {
+    const fn new() -> Self {
+        CallFrame {function: Function::new(), ip:0, slots: Vec::new()}
+    }
 }
 
 macro_rules! binary_op {
@@ -31,16 +50,20 @@ macro_rules! binary_op {
 impl VM {
     pub fn new() -> Self {
         VM {
-            chunk: None,
-            ip: 0,
+            frames: [const { CallFrame::new() }; FRAMES_MAX],
+            frame: CallFrame::new(),
+            frame_count: 0,
             stack: Vec::new(),
             globals: HashMap::new(),
         }
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), RuntimeError> {
-        self.chunk = Some(chunk);
-        self.ip = 0;
+    pub fn interpret(&mut self, function: Function) -> Result<(), RuntimeError> {
+        let mut frame = self.frames[self.frame_count];
+        frame.function = function;
+        frame.ip = function.chunk.code;
+        frame.slots = self.stack;
+        self.frame_count += 1;
         self.run()
     }
 
@@ -58,6 +81,8 @@ impl VM {
                 self.unwrap_chunk().disassemble_instruction(self.ip);
             }
 
+            // [perf] FIXME: remove this clone
+            self.frame = self.frames[self.frame_count - 1].clone();
             let instruction = self.read_byte().try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
@@ -166,7 +191,7 @@ impl VM {
                 OpCode::OpGetLocal => {
                     let local_index = self.read_byte();
                     let local_value = self.get_local(local_index);
-                    self.push(local_value);
+                    self.frame.slots.push(local_value);
                 }
                 OpCode::OpSetLocal => {
                     let local_index = self.read_byte();
@@ -174,24 +199,24 @@ impl VM {
                     self.stack[usize_index] = self.peek(0).clone();
                 }
                 OpCode::OpJump => {
-                    self.ip += self.read_short() as usize;
+                    self.frame.ip += self.read_short() as usize;
                 }
                 OpCode::OpJumpIfTrue => {
                     let condition_is_truthy = self.peek(0).is_truthy();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_truthy {
-                        self.ip += jump;
+                        self.frame.ip += jump;
                     }
                 }
                 OpCode::OpJumpIfFalse => {
                     let condition_is_falsey = self.peek(0).is_falsey();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_falsey {
-                        self.ip += jump;
+                        self.frame.ip += jump;
                     }
                 }
                 OpCode::OpLoop => {
-                    self.ip -= self.read_short() as usize;
+                    self.frame.ip -= self.read_short() as usize;
                 }
                 OpCode::OpEof => {
                     return Ok(());
@@ -200,21 +225,19 @@ impl VM {
         }
     }
 
-    /// helper to avoid dealing with Option. This should be safe to call within
-    /// the context of an interpret run.
-    fn unwrap_chunk(&self) -> &Chunk {
-        self.chunk.as_ref().expect("Expected chunk to be set")
+    fn get_chunk(&self) -> &Chunk {
+        &self.frame.function.chunk
     }
 
     fn read_byte(&mut self) -> u8 {
-        let result = self.unwrap_chunk().read_byte(self.ip);
-        self.ip += 1;
+        let result = self.get_chunk().read_byte(self.frame.ip);
+        self.frame.ip += 1;
         result
     }
 
     fn read_constant(&mut self) -> Value {
         let byte = self.read_byte();
-        self.unwrap_chunk().read_constant(byte)
+        self.get_chunk().read_constant(byte)
     }
 
     fn push(&mut self, value: Value) {
@@ -250,7 +273,7 @@ impl VM {
     }
 
     fn runtime_error(&mut self, msg: String) -> RuntimeError {
-        let lineno = self.unwrap_chunk().get_lineno(self.ip - 1);
+        let lineno = self.get_chunk().get_lineno(self.frame.ip - 1);
         self.reset_stack();
         RuntimeError {
             msg: format!("{}\n[line {}] in script", msg, lineno),
