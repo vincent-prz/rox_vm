@@ -1,5 +1,4 @@
 use rox::ast::parser::Parser;
-use rox::chunk::Chunk;
 use rox::compiler::Compiler;
 use rox::compiler::FunctionType;
 use rox::scanner::Scanner;
@@ -77,8 +76,8 @@ fn run(source: String) {
         exit(65);
     }
 
-    let mut vm = VM::new();
-    match vm.interpret(compilation_result.function) {
+    let mut vm = VM::new(&compiler.function);
+    match vm.interpret() {
         Err(RuntimeError { msg }) => {
             println!("{}", msg);
             exit(70);

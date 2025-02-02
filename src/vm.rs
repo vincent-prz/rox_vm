@@ -4,32 +4,38 @@ use crate::chunk::{Chunk, OpCode};
 use crate::value::{Function, Value};
 
 static FRAMES_MAX: usize = 64;
+// static UINT8_COUNT: usize = 256;
+// static STACK_MAX: usize =  FRAMES_MAX * UINT8_COUNT;
 
-pub struct VM {
-    frames: [CallFrame; FRAMES_MAX],
-    // FIXME: remove this
-    frame: CallFrame,
-    frame_count: usize,
+pub struct VM<'a> {
+    frames: Vec<CallFrame<'a>>,
+    current_frame: CallFrame<'a>,
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
-    // [perf] FIXME: use fixed length array instead
+    // [perf] should we used a fixed size array ?
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
 }
 
-#[derive(Clone)]
-struct CallFrame {
-    function: Function,
+#[derive(Copy, Clone)]
+struct CallFrame<'a> {
+    function: &'a Function,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
-    // [perf] FIXME: use fixed sized array
-    slots: Vec<Value>,
+    slots_start_index: usize,
 }
 
-impl CallFrame {
-    const fn new() -> Self {
-        CallFrame {function: Function::new(), ip:0, slots: Vec::new()}
+impl<'a> CallFrame<'a> {
+    const fn new(function: &'a Function, ip: usize, slots_start_index: usize) -> Self {
+        CallFrame {
+            function,
+            ip,
+            slots_start_index,
+        }
     }
+    // fn push(&mut self, val: Value) {
+
+    // }
 }
 
 macro_rules! binary_op {
@@ -47,23 +53,20 @@ macro_rules! binary_op {
     }};
 }
 
-impl VM {
-    pub fn new() -> Self {
+impl<'a> VM<'a> {
+    pub fn new(function: &'a Function) -> Self {
+        let mut frames = Vec::with_capacity(FRAMES_MAX);
+        let current_frame = CallFrame::new(function, 0, 0);
+        frames.push(current_frame);
         VM {
-            frames: [const { CallFrame::new() }; FRAMES_MAX],
-            frame: CallFrame::new(),
-            frame_count: 0,
+            frames,
+            current_frame: current_frame,
             stack: Vec::new(),
             globals: HashMap::new(),
         }
     }
 
-    pub fn interpret(&mut self, function: Function) -> Result<(), RuntimeError> {
-        let mut frame = self.frames[self.frame_count];
-        frame.function = function;
-        frame.ip = function.chunk.code;
-        frame.slots = self.stack;
-        self.frame_count += 1;
+    pub fn interpret(&'a mut self) -> Result<(), RuntimeError> {
         self.run()
     }
 
@@ -78,11 +81,11 @@ impl VM {
                     print!(" ]");
                 }
                 println!("");
-                self.unwrap_chunk().disassemble_instruction(self.ip);
+                self.get_chunk()
+                    .disassemble_instruction(self.current_frame.ip);
             }
 
-            // [perf] FIXME: remove this clone
-            self.frame = self.frames[self.frame_count - 1].clone();
+            self.current_frame = self.frames[self.frames.len() - 1];
             let instruction = self.read_byte().try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
@@ -191,7 +194,7 @@ impl VM {
                 OpCode::OpGetLocal => {
                     let local_index = self.read_byte();
                     let local_value = self.get_local(local_index);
-                    self.frame.slots.push(local_value);
+                    self.stack.push(local_value)
                 }
                 OpCode::OpSetLocal => {
                     let local_index = self.read_byte();
@@ -199,39 +202,43 @@ impl VM {
                     self.stack[usize_index] = self.peek(0).clone();
                 }
                 OpCode::OpJump => {
-                    self.frame.ip += self.read_short() as usize;
+                    self.current_frame.ip += self.read_short() as usize;
                 }
                 OpCode::OpJumpIfTrue => {
                     let condition_is_truthy = self.peek(0).is_truthy();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_truthy {
-                        self.frame.ip += jump;
+                        self.current_frame.ip += jump;
                     }
                 }
                 OpCode::OpJumpIfFalse => {
                     let condition_is_falsey = self.peek(0).is_falsey();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_falsey {
-                        self.frame.ip += jump;
+                        self.current_frame.ip += jump;
                     }
                 }
                 OpCode::OpLoop => {
-                    self.frame.ip -= self.read_short() as usize;
+                    self.current_frame.ip -= self.read_short() as usize;
                 }
                 OpCode::OpEof => {
                     return Ok(());
                 }
             }
+            // horrible hack to bypass Rust's mutability rules
+            // indeed we need to set updated ip back into the frame in `self.frames`
+            let frame_count = self.frames.len();
+            self.frames[frame_count - 1] = self.current_frame;
         }
     }
 
     fn get_chunk(&self) -> &Chunk {
-        &self.frame.function.chunk
+        &self.current_frame.function.chunk
     }
 
     fn read_byte(&mut self) -> u8 {
-        let result = self.get_chunk().read_byte(self.frame.ip);
-        self.frame.ip += 1;
+        let result = self.get_chunk().read_byte(self.current_frame.ip);
+        self.current_frame.ip += 1;
         result
     }
 
@@ -273,7 +280,7 @@ impl VM {
     }
 
     fn runtime_error(&mut self, msg: String) -> RuntimeError {
-        let lineno = self.get_chunk().get_lineno(self.frame.ip - 1);
+        let lineno = self.get_chunk().get_lineno(self.current_frame.ip - 1);
         self.reset_stack();
         RuntimeError {
             msg: format!("{}\n[line {}] in script", msg, lineno),
