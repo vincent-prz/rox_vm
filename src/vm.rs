@@ -9,14 +9,13 @@ static FRAMES_MAX: usize = 64;
 
 pub struct VM<'a> {
     frames: Vec<CallFrame<'a>>,
-    current_frame: CallFrame<'a>,
+    current_frame_index: usize,
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
     // [perf] should we used a fixed size array ?
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
 }
 
-#[derive(Copy, Clone)]
 struct CallFrame<'a> {
     function: &'a Function,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
@@ -33,9 +32,6 @@ impl<'a> CallFrame<'a> {
             slots_start_index,
         }
     }
-    // fn push(&mut self, val: Value) {
-
-    // }
 }
 
 macro_rules! binary_op {
@@ -60,7 +56,7 @@ impl<'a> VM<'a> {
         frames.push(current_frame);
         VM {
             frames,
-            current_frame: current_frame,
+            current_frame_index: 0,
             stack: Vec::new(),
             globals: HashMap::new(),
         }
@@ -85,7 +81,7 @@ impl<'a> VM<'a> {
                     .disassemble_instruction(self.current_frame.ip);
             }
 
-            self.current_frame = self.frames[self.frames.len() - 1];
+            self.current_frame_index = self.frames.len() - 1;
             let instruction = self.read_byte().try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
@@ -202,43 +198,42 @@ impl<'a> VM<'a> {
                     self.stack[usize_index] = self.peek(0).clone();
                 }
                 OpCode::OpJump => {
-                    self.current_frame.ip += self.read_short() as usize;
+                    // FIXME: find a way to make these current_frame acces DRY without infuriating the borrow checker
+                    self.frames[self.current_frame_index].ip += self.read_short() as usize;
                 }
                 OpCode::OpJumpIfTrue => {
                     let condition_is_truthy = self.peek(0).is_truthy();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_truthy {
-                        self.current_frame.ip += jump;
+                        self.frames[self.current_frame_index].ip += jump;
                     }
                 }
                 OpCode::OpJumpIfFalse => {
                     let condition_is_falsey = self.peek(0).is_falsey();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_falsey {
-                        self.current_frame.ip += jump;
+                        self.frames[self.current_frame_index].ip += jump;
                     }
                 }
                 OpCode::OpLoop => {
-                    self.current_frame.ip -= self.read_short() as usize;
+                    self.frames[self.current_frame_index].ip -= self.read_short() as usize;
                 }
                 OpCode::OpEof => {
                     return Ok(());
                 }
             }
-            // horrible hack to bypass Rust's mutability rules
-            // indeed we need to set updated ip back into the frame in `self.frames`
-            let frame_count = self.frames.len();
-            self.frames[frame_count - 1] = self.current_frame;
         }
     }
 
-    fn get_chunk(&self) -> &Chunk {
-        &self.current_frame.function.chunk
+    fn get_chunk(&self) -> &'a Chunk {
+        &self.frames[self.current_frame_index].function.chunk
     }
 
     fn read_byte(&mut self) -> u8 {
-        let result = self.get_chunk().read_byte(self.current_frame.ip);
-        self.current_frame.ip += 1;
+        let result = self
+            .get_chunk()
+            .read_byte(self.frames[self.current_frame_index].ip);
+        self.frames[self.current_frame_index].ip += 1;
         result
     }
 
@@ -280,7 +275,9 @@ impl<'a> VM<'a> {
     }
 
     fn runtime_error(&mut self, msg: String) -> RuntimeError {
-        let lineno = self.get_chunk().get_lineno(self.current_frame.ip - 1);
+        let lineno = self
+            .get_chunk()
+            .get_lineno(self.frames[self.current_frame_index].ip - 1);
         self.reset_stack();
         RuntimeError {
             msg: format!("{}\n[line {}] in script", msg, lineno),
