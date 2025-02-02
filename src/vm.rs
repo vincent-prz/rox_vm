@@ -78,7 +78,7 @@ impl<'a> VM<'a> {
                 }
                 println!("");
                 self.get_chunk()
-                    .disassemble_instruction(self.current_frame.ip);
+                    .disassemble_instruction(self.frames[self.current_frame_index].ip);
             }
 
             self.current_frame_index = self.frames.len() - 1;

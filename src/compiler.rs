@@ -1,6 +1,6 @@
 use crate::ast::{
-    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal,
-    Logical, Program, Statement, Unary, Variable, WhileStmt,
+    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, FunDecl, IfStmt, LetDecl,
+    Literal, Logical, Program, Statement, Unary, Variable, WhileStmt,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
@@ -21,15 +21,20 @@ struct Local {
 
 // useful to distinguish real functions from implicit top level function
 pub enum FunctionType {
-    Function,
+    Function(String),
     Script,
 }
 
 impl Compiler {
     pub fn new(function_type: FunctionType) -> Self {
+        let mut function = Function::new();
+        function.name = match &function_type {
+            FunctionType::Function(name) => Some(name.clone()),
+            FunctionType::Script => Some(String::from("<script>")),
+        };
         Compiler {
             current_line: 0,
-            function: Function::new(),
+            function,
             function_type,
             // TODO: initialize locals like in page 438
             locals: Vec::new(),
@@ -57,7 +62,7 @@ impl Compiler {
         let inner_decl = decl.decl;
         self.current_line = decl.lineno;
         match inner_decl {
-            Declaration::FunDecl(_) => todo!(),
+            Declaration::FunDecl(decl) => self.fun_decl(decl),
             Declaration::LetDecl(decl) => self.let_decl(decl),
             Declaration::Statement(statement) => self.statement(statement),
         }
@@ -232,6 +237,22 @@ impl Compiler {
             return Ok(());
         }
         let constant = self.make_constant(Value::Str(decl.identifier.lexeme));
+        self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
+        Ok(())
+    }
+
+    fn fun_decl(&mut self, decl: FunDecl) -> Result<(), String> {
+        let func_name = &decl.name.lexeme;
+        let mut compiler = Compiler::new(FunctionType::Function(func_name.clone()));
+        compiler.run(Program {
+            declarations: decl.body,
+        })?;
+        if self.scope_depth > 0 {
+            self.add_local(decl.name)?;
+            return Ok(());
+        }
+        self.emit_constant(Value::Function(compiler.function));
+        let constant = self.make_constant(Value::Str(func_name.clone()));
         self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         Ok(())
     }
