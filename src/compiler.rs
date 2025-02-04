@@ -247,11 +247,11 @@ impl Compiler {
         compiler.run(Program {
             declarations: decl.body,
         })?;
+        self.emit_constant(Value::Function(compiler.function));
         if self.scope_depth > 0 {
             self.add_local(decl.name)?;
             return Ok(());
         }
-        self.emit_constant(Value::Function(compiler.function));
         let constant = self.make_constant(Value::Str(func_name.clone()));
         self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         Ok(())
