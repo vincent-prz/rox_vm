@@ -7,8 +7,8 @@ static FRAMES_MAX: usize = 64;
 // static UINT8_COUNT: usize = 256;
 // static STACK_MAX: usize =  FRAMES_MAX * UINT8_COUNT;
 
-pub struct VM<'a> {
-    frames: Vec<CallFrame<'a>>,
+pub struct VM {
+    frames: Vec<CallFrame>,
     current_frame_index: usize,
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
     // [perf] should we used a fixed size array ?
@@ -16,16 +16,16 @@ pub struct VM<'a> {
     globals: HashMap<String, Value>,
 }
 
-struct CallFrame<'a> {
-    function: &'a Function,
+struct CallFrame {
+    function: Function,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
     slots_start_index: usize,
 }
 
-impl<'a> CallFrame<'a> {
-    const fn new(function: &'a Function, ip: usize, slots_start_index: usize) -> Self {
+impl CallFrame {
+    const fn new(function: Function, ip: usize, slots_start_index: usize) -> Self {
         CallFrame {
             function,
             ip,
@@ -49,8 +49,8 @@ macro_rules! binary_op {
     }};
 }
 
-impl<'a> VM<'a> {
-    pub fn new(function: &'a Function) -> Self {
+impl VM {
+    pub fn new(function: Function) -> Self {
         let mut frames = Vec::with_capacity(FRAMES_MAX);
         let current_frame = CallFrame::new(function, 0, 0);
         frames.push(current_frame);
@@ -62,7 +62,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn interpret(&'a mut self) -> Result<(), RuntimeError> {
+    pub fn interpret(&mut self) -> Result<(), RuntimeError> {
         self.run()
     }
 
@@ -130,6 +130,7 @@ impl<'a> VM<'a> {
                 OpCode::OpGreater => binary_op!(self, >, Value::Boolean),
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
+                    self.frames.pop();
                     return Ok(());
                 }
                 OpCode::OpTrue => self.push(Value::Boolean(true)),
@@ -218,6 +219,20 @@ impl<'a> VM<'a> {
                 OpCode::OpLoop => {
                     self.frames[self.current_frame_index].ip -= self.read_short() as usize;
                 }
+                OpCode::OpCall => {
+                    let callee = self.pop();
+                    match callee {
+                        Value::Function(function) => {
+                            let new_frame = CallFrame {
+                                function,
+                                ip: 0,                // FIXME
+                                slots_start_index: 0, // FIXME
+                            };
+                            self.frames.push(new_frame);
+                        }
+                        value => todo!(), // FIXME
+                    }
+                }
                 OpCode::OpEof => {
                     return Ok(());
                 }
@@ -225,7 +240,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn get_chunk(&self) -> &'a Chunk {
+    fn get_chunk(&self) -> &Chunk {
         &self.frames[self.current_frame_index].function.chunk
     }
 

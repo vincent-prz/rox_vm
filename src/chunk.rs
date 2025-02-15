@@ -31,6 +31,7 @@ pub enum OpCode {
     OpJumpIfTrue,
     OpJumpIfFalse,
     OpLoop,
+    OpCall,
     OpEof,
 }
 
@@ -68,6 +69,7 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpJumpIfTrue as u8 => Ok(OpCode::OpJumpIfTrue),
             x if x == OpCode::OpJumpIfFalse as u8 => Ok(OpCode::OpJumpIfFalse),
             x if x == OpCode::OpLoop as u8 => Ok(OpCode::OpLoop),
+            x if x == OpCode::OpCall as u8 => Ok(OpCode::OpCall),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
@@ -221,6 +223,7 @@ impl Chunk {
             OpCode::OpJumpIfTrue => self.jump_instruction("OP_JUMP_IF_TRUE", 1, offset),
             OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OpCode::OpLoop => self.jump_instruction("OP_LOOP", -1, offset),
+            OpCode::OpCall => self.simple_instruction("OP_CALL", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }

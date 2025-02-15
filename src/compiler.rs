@@ -1,5 +1,5 @@
 use crate::ast::{
-    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, FunDecl, IfStmt, LetDecl,
+    Assignment, Binary, Call, Declaration, DeclarationWithLineNo, Expr, FunDecl, IfStmt, LetDecl,
     Literal, Logical, Program, Statement, Unary, Variable, WhileStmt,
 };
 use crate::chunk::{Chunk, OpCode};
@@ -117,7 +117,7 @@ impl Compiler {
             Expr::Literal(literal) => self.literal(literal),
             Expr::Unary(op) => self.unary(op),
             Expr::Binary(op) => self.binary(op),
-            Expr::Call(_) => todo!(),
+            Expr::Call(call) => self.call(call),
             Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(variable) => self.variable(variable),
             Expr::Assignment(assignment) => self.assignment(assignment),
@@ -177,6 +177,12 @@ impl Compiler {
             ))?,
         };
         self.emit_byte(op_code as u8);
+        Ok(())
+    }
+
+    fn call(&mut self, call: Call) -> Result<(), String> {
+        self.expression(*call.callee)?;
+        self.emit_byte(OpCode::OpCall as u8);
         Ok(())
     }
 
