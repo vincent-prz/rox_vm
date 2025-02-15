@@ -68,6 +68,7 @@ impl VM {
 
     fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
+            self.current_frame_index = self.frames.len() - 1;
             #[cfg(feature = "debugTraceExecution")]
             {
                 print!("          ");
@@ -77,11 +78,14 @@ impl VM {
                     print!(" ]");
                 }
                 println!("");
+                // let func_name = match &self.frames[self.current_frame_index].function.name {
+                //     Some(func_name) => func_name.clone(),
+                //     None => String::from("<script>"),
+                // };
+                // print!("{}::", func_name);
                 self.get_chunk()
                     .disassemble_instruction(self.frames[self.current_frame_index].ip);
             }
-
-            self.current_frame_index = self.frames.len() - 1;
             let instruction = self.read_byte().try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
@@ -131,7 +135,6 @@ impl VM {
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
                     self.frames.pop();
-                    return Ok(());
                 }
                 OpCode::OpTrue => self.push(Value::Boolean(true)),
                 OpCode::OpFalse => self.push(Value::Boolean(false)),
@@ -223,10 +226,13 @@ impl VM {
                     let callee = self.pop();
                     match callee {
                         Value::Function(function) => {
+                            let arity = function.arity;
                             let new_frame = CallFrame {
                                 function,
-                                ip: 0,                // FIXME
-                                slots_start_index: 0, // FIXME
+                                ip: 0,
+                                // Subtle: the `- arity` part is for the overlapping of callframes
+                                // windows on the stack, see 24.5.1
+                                slots_start_index: self.stack.len() - arity,
                             };
                             self.frames.push(new_frame);
                         }
@@ -276,7 +282,8 @@ impl VM {
 
     fn get_local(&self, index: u8) -> Value {
         let usize_index: usize = index.into();
-        self.stack[usize_index].clone()
+        let slots_start_index = self.frames[self.current_frame_index].slots_start_index;
+        self.stack[usize_index + slots_start_index].clone()
     }
 
     fn reset_stack(&mut self) {

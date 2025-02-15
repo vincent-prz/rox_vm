@@ -16,10 +16,7 @@ impl fmt::Display for Value {
             Value::Number(n) => write!(f, "{}", n),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
-            Value::Function(function) => match &function.name {
-                Some(func_name) => write!(f, "<fn {}>", func_name),
-                None => write!(f, "<script>"),
-            },
+            Value::Function(function) => write!(f, "<fn {}>", function.name),
         }
     }
 }
@@ -41,16 +38,16 @@ impl Value {
 
 #[derive(Clone, PartialEq)]
 pub struct Function {
-    arity: u8,
+    pub arity: usize,
     pub chunk: Chunk,
-    pub name: Option<String>,
+    pub name: String,
 }
 
 impl Function {
-    pub const fn new() -> Self {
+    pub const fn new(name: String, arity: usize) -> Self {
         Function {
-            arity: 0,
-            name: None,
+            arity,
+            name,
             chunk: Chunk::new(),
         }
     }

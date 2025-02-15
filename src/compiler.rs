@@ -21,17 +21,17 @@ struct Local {
 
 // useful to distinguish real functions from implicit top level function
 pub enum FunctionType {
-    Function(String),
+    Function(String, usize),
     Script,
 }
 
 impl Compiler {
     pub fn new(function_type: FunctionType) -> Self {
-        let mut function = Function::new();
-        function.name = match &function_type {
-            FunctionType::Function(name) => Some(name.clone()),
-            FunctionType::Script => Some(String::from("<script>")),
+        let (func_name, arity) = match &function_type {
+            FunctionType::Function(name, arity) => (name.clone(), arity),
+            FunctionType::Script => (String::from("<script>"), &0),
         };
+        let function = Function::new(func_name, *arity);
         Compiler {
             current_line: 0,
             function,
@@ -46,7 +46,11 @@ impl Compiler {
         for decl in program_ast.declarations {
             self.declaration(decl)?;
         }
-        self.emit_byte(OpCode::OpEof as u8);
+        match self.function_type {
+            FunctionType::Function(_, _) => self.emit_return(),
+            FunctionType::Script => self.emit_byte(OpCode::OpEof as u8),
+        }
+
         #[cfg(feature = "debugPrintCode")]
         {
             let chunk_name = match &self.function.name {
@@ -181,6 +185,9 @@ impl Compiler {
     }
 
     fn call(&mut self, call: Call) -> Result<(), String> {
+        for arg in call.arguments {
+            self.expression(arg)?;
+        }
         self.expression(*call.callee)?;
         self.emit_byte(OpCode::OpCall as u8);
         Ok(())
@@ -210,7 +217,7 @@ impl Compiler {
     }
 
     fn return_statement(&mut self) -> Result<(), String> {
-        self.emit_byte(OpCode::OpReturn as u8);
+        self.emit_return();
         Ok(())
     }
 
@@ -249,7 +256,12 @@ impl Compiler {
 
     fn fun_decl(&mut self, decl: FunDecl) -> Result<(), String> {
         let func_name = &decl.name.lexeme;
-        let mut compiler = Compiler::new(FunctionType::Function(func_name.clone()));
+        let mut compiler =
+            Compiler::new(FunctionType::Function(func_name.clone(), decl.params.len()));
+        compiler.scope_depth += 1;
+        for param in decl.params {
+            compiler.add_local(param)?;
+        }
         compiler.run(Program {
             declarations: decl.body,
         })?;
@@ -368,6 +380,12 @@ impl Compiler {
     fn emit_constant(&mut self, value: Value) {
         let constant = self.make_constant(value);
         self.emit_bytes(OpCode::OpConstant as u8, constant);
+    }
+
+    fn emit_return(&mut self) {
+        // FIXME: hack - putting 0 as a result when there is no return statement
+        self.emit_constant(Value::Number(0.));
+        self.emit_byte(OpCode::OpReturn as u8);
     }
 
     fn emit_jump(&mut self, instruction: u8) -> usize {
