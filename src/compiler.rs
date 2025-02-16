@@ -1,6 +1,6 @@
 use crate::ast::{
     Assignment, Binary, Call, Declaration, DeclarationWithLineNo, Expr, FunDecl, IfStmt, LetDecl,
-    Literal, Logical, Program, Statement, Unary, Variable, WhileStmt,
+    Literal, Logical, Program, ReturnStmt, Statement, Unary, Variable, WhileStmt,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
@@ -47,6 +47,7 @@ impl Compiler {
             self.declaration(decl)?;
         }
         match self.function_type {
+            // adding a return instruction in case the programmer didn't put one
             FunctionType::Function(_, _) => self.emit_return(),
             FunctionType::Script => self.emit_byte(OpCode::OpEof as u8),
         }
@@ -82,7 +83,7 @@ impl Compiler {
             }
             Statement::IfStmt(if_stmt) => self.if_statement(if_stmt),
             Statement::PrintStmt(expr) => self.print_statement(expr),
-            Statement::ReturnStmt(_) => self.return_statement(),
+            Statement::ReturnStmt(ret_stmt) => self.return_statement(ret_stmt),
             Statement::WhileStmt(while_stmt) => self.while_statement(while_stmt),
             Statement::Block(declarations) => self.block(declarations),
         }
@@ -216,8 +217,13 @@ impl Compiler {
         Ok(())
     }
 
-    fn return_statement(&mut self) -> Result<(), String> {
-        self.emit_return();
+    fn return_statement(&mut self, ret_stmt: ReturnStmt) -> Result<(), String> {
+        match ret_stmt.expr {
+            Some(expr) => self.expression(expr)?,
+            // FIXME: hack - putting 0 as a result when returning nothing
+            None => self.emit_constant(Value::Number(0.)),
+        };
+        self.emit_byte(OpCode::OpReturn as u8);
         Ok(())
     }
 
@@ -383,7 +389,7 @@ impl Compiler {
     }
 
     fn emit_return(&mut self) {
-        // FIXME: hack - putting 0 as a result when there is no return statement
+        // FIXME: hack - putting 0 as a result nothing is returned
         self.emit_constant(Value::Number(0.));
         self.emit_byte(OpCode::OpReturn as u8);
     }
