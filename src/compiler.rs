@@ -54,10 +54,7 @@ impl Compiler {
 
         #[cfg(feature = "debugPrintCode")]
         {
-            let chunk_name = match &self.function.name {
-                Some(func_name) => func_name.clone(),
-                None => String::from("<script>"),
-            };
+            let chunk_name = self.function.name.clone();
             self.current_chunk().disassemble(&chunk_name);
         }
         Ok(())

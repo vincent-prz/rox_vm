@@ -134,7 +134,12 @@ impl VM {
                 OpCode::OpGreater => binary_op!(self, >, Value::Boolean),
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
-                    self.frames.pop();
+                    let result = self.pop();
+                    // [perf] does expect have a penalty cost ?
+                    let frame = self.frames.pop().expect("Tried to pop on empty stackframe");
+                    // remove param arguments from the stack.
+                    self.stack.truncate(frame.slots_start_index);
+                    self.stack.push(result);
                 }
                 OpCode::OpTrue => self.push(Value::Boolean(true)),
                 OpCode::OpFalse => self.push(Value::Boolean(false)),

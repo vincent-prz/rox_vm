@@ -6,6 +6,6 @@
         return fib(n - 1) + fib(n - 2);
     }
 
-    let result = fib(2);
+    let result = fib(11);
     print(result);
 }
