@@ -1,16 +1,37 @@
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
-use crate::value::Value;
+use crate::value::{Function, Value};
+
+static FRAMES_MAX: usize = 64;
+// static UINT8_COUNT: usize = 256;
+// static STACK_MAX: usize =  FRAMES_MAX * UINT8_COUNT;
 
 pub struct VM {
-    chunk: Option<Chunk>,
+    frames: Vec<CallFrame>,
+    current_frame_index: usize,
+    // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
+    // [perf] should we used a fixed size array ?
+    stack: Vec<Value>,
+    globals: HashMap<String, Value>,
+}
+
+struct CallFrame {
+    function: Function,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
-    // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
-    stack: Vec<Value>,
-    globals: HashMap<String, Value>,
+    slots_start_index: usize,
+}
+
+impl CallFrame {
+    const fn new(function: Function, ip: usize, slots_start_index: usize) -> Self {
+        CallFrame {
+            function,
+            ip,
+            slots_start_index,
+        }
+    }
 }
 
 macro_rules! binary_op {
@@ -29,23 +50,25 @@ macro_rules! binary_op {
 }
 
 impl VM {
-    pub fn new() -> Self {
+    pub fn new(function: Function) -> Self {
+        let mut frames = Vec::with_capacity(FRAMES_MAX);
+        let current_frame = CallFrame::new(function, 0, 0);
+        frames.push(current_frame);
         VM {
-            chunk: None,
-            ip: 0,
+            frames,
+            current_frame_index: 0,
             stack: Vec::new(),
             globals: HashMap::new(),
         }
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), RuntimeError> {
-        self.chunk = Some(chunk);
-        self.ip = 0;
+    pub fn interpret(&mut self) -> Result<(), RuntimeError> {
         self.run()
     }
 
     fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
+            self.current_frame_index = self.frames.len() - 1;
             #[cfg(feature = "debugTraceExecution")]
             {
                 print!("          ");
@@ -55,9 +78,14 @@ impl VM {
                     print!(" ]");
                 }
                 println!("");
-                self.unwrap_chunk().disassemble_instruction(self.ip);
+                // let func_name = match &self.frames[self.current_frame_index].function.name {
+                //     Some(func_name) => func_name.clone(),
+                //     None => String::from("<script>"),
+                // };
+                // print!("{}::", func_name);
+                self.get_chunk()
+                    .disassemble_instruction(self.frames[self.current_frame_index].ip);
             }
-
             let instruction = self.read_byte().try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
@@ -106,7 +134,12 @@ impl VM {
                 OpCode::OpGreater => binary_op!(self, >, Value::Boolean),
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
-                    return Ok(());
+                    let result = self.pop();
+                    // [perf] does expect have a penalty cost ?
+                    let frame = self.frames.pop().expect("Tried to pop on empty stackframe");
+                    // remove param arguments from the stack.
+                    self.stack.truncate(frame.slots_start_index);
+                    self.stack.push(result);
                 }
                 OpCode::OpTrue => self.push(Value::Boolean(true)),
                 OpCode::OpFalse => self.push(Value::Boolean(false)),
@@ -166,7 +199,7 @@ impl VM {
                 OpCode::OpGetLocal => {
                     let local_index = self.read_byte();
                     let local_value = self.get_local(local_index);
-                    self.push(local_value);
+                    self.stack.push(local_value)
                 }
                 OpCode::OpSetLocal => {
                     let local_index = self.read_byte();
@@ -174,24 +207,42 @@ impl VM {
                     self.stack[usize_index] = self.peek(0).clone();
                 }
                 OpCode::OpJump => {
-                    self.ip += self.read_short() as usize;
+                    // FIXME: find a way to make these current_frame acces DRY without infuriating the borrow checker
+                    self.frames[self.current_frame_index].ip += self.read_short() as usize;
                 }
                 OpCode::OpJumpIfTrue => {
                     let condition_is_truthy = self.peek(0).is_truthy();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_truthy {
-                        self.ip += jump;
+                        self.frames[self.current_frame_index].ip += jump;
                     }
                 }
                 OpCode::OpJumpIfFalse => {
                     let condition_is_falsey = self.peek(0).is_falsey();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_falsey {
-                        self.ip += jump;
+                        self.frames[self.current_frame_index].ip += jump;
                     }
                 }
                 OpCode::OpLoop => {
-                    self.ip -= self.read_short() as usize;
+                    self.frames[self.current_frame_index].ip -= self.read_short() as usize;
+                }
+                OpCode::OpCall => {
+                    let callee = self.pop();
+                    match callee {
+                        Value::Function(function) => {
+                            let arity = function.arity;
+                            let new_frame = CallFrame {
+                                function,
+                                ip: 0,
+                                // Subtle: the `- arity` part is for the overlapping of callframes
+                                // windows on the stack, see 24.5.1
+                                slots_start_index: self.stack.len() - arity,
+                            };
+                            self.frames.push(new_frame);
+                        }
+                        value => todo!(), // FIXME
+                    }
                 }
                 OpCode::OpEof => {
                     return Ok(());
@@ -200,21 +251,21 @@ impl VM {
         }
     }
 
-    /// helper to avoid dealing with Option. This should be safe to call within
-    /// the context of an interpret run.
-    fn unwrap_chunk(&self) -> &Chunk {
-        self.chunk.as_ref().expect("Expected chunk to be set")
+    fn get_chunk(&self) -> &Chunk {
+        &self.frames[self.current_frame_index].function.chunk
     }
 
     fn read_byte(&mut self) -> u8 {
-        let result = self.unwrap_chunk().read_byte(self.ip);
-        self.ip += 1;
+        let result = self
+            .get_chunk()
+            .read_byte(self.frames[self.current_frame_index].ip);
+        self.frames[self.current_frame_index].ip += 1;
         result
     }
 
     fn read_constant(&mut self) -> Value {
         let byte = self.read_byte();
-        self.unwrap_chunk().read_constant(byte)
+        self.get_chunk().read_constant(byte)
     }
 
     fn push(&mut self, value: Value) {
@@ -236,7 +287,8 @@ impl VM {
 
     fn get_local(&self, index: u8) -> Value {
         let usize_index: usize = index.into();
-        self.stack[usize_index].clone()
+        let slots_start_index = self.frames[self.current_frame_index].slots_start_index;
+        self.stack[usize_index + slots_start_index].clone()
     }
 
     fn reset_stack(&mut self) {
@@ -250,7 +302,9 @@ impl VM {
     }
 
     fn runtime_error(&mut self, msg: String) -> RuntimeError {
-        let lineno = self.unwrap_chunk().get_lineno(self.ip - 1);
+        let lineno = self
+            .get_chunk()
+            .get_lineno(self.frames[self.current_frame_index].ip - 1);
         self.reset_stack();
         RuntimeError {
             msg: format!("{}\n[line {}] in script", msg, lineno),
