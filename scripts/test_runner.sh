@@ -21,15 +21,14 @@ for filename in $(ls ${TEST_DIR}/in); do
     if [[ $? -eq 101 ]]; then
         echo "${RED}${filename}: PANICKED${NOCOLOR}"
         nb_failures=$((nb_failures + 1))
-        continue
-    fi
-
-    diff $expected_output_file actual > /dev/null
-    if [[ $? -eq 0 ]]; then
-        echo "${filename}: OK"
     else
-        echo "${RED}${filename}: KO${NOCOLOR}"
-        nb_failures=$((nb_failures + 1))
+        diff $expected_output_file actual > /dev/null
+        if [[ $? -eq 0 ]]; then
+            echo "${filename}: OK"
+        else
+            echo "${RED}${filename}: KO${NOCOLOR}"
+            nb_failures=$((nb_failures + 1))
+        fi
     fi
     nb_tests=$((nb_tests + 1))
 done
