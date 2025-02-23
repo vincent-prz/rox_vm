@@ -16,8 +16,9 @@ pub struct VM {
     globals: HashMap<String, Value>,
 }
 
+// NOTE - to retrieve the callframe function, we can use `stack[slots_start_index]`
+// this avoids the need to have a `function` field and tricky lifetime issues
 struct CallFrame {
-    function: Function,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
@@ -25,9 +26,8 @@ struct CallFrame {
 }
 
 impl CallFrame {
-    const fn new(function: Function, ip: usize, slots_start_index: usize) -> Self {
+    const fn new(ip: usize, slots_start_index: usize) -> Self {
         CallFrame {
-            function,
             ip,
             slots_start_index,
         }
@@ -52,12 +52,12 @@ macro_rules! binary_op {
 impl VM {
     pub fn new(function: Function) -> Self {
         let mut frames = Vec::with_capacity(FRAMES_MAX);
-        let current_frame = CallFrame::new(function, 0, 0);
+        let current_frame = CallFrame::new(0, 0);
         frames.push(current_frame);
         VM {
             frames,
             current_frame_index: 0,
-            stack: Vec::new(),
+            stack: vec![Value::Function(function)],
             globals: HashMap::new(),
         }
     }
@@ -228,16 +228,16 @@ impl VM {
                     self.frames[self.current_frame_index].ip -= self.read_short() as usize;
                 }
                 OpCode::OpCall => {
-                    let callee = self.pop();
+                    let nb_args = self.read_byte();
+                    let callee = self.peek(nb_args as usize);
                     match callee {
                         Value::Function(function) => {
                             let arity = function.arity;
                             let new_frame = CallFrame {
-                                function,
                                 ip: 0,
                                 // Subtle: the `- arity` part is for the overlapping of callframes
-                                // windows on the stack, see 24.5.1
-                                slots_start_index: self.stack.len() - arity,
+                                // windows on the stack, see 24.5.1. - 1 is for the slot reserved for the fucntion itself
+                                slots_start_index: self.stack.len() - arity - 1,
                             };
                             self.frames.push(new_frame);
                         }
@@ -252,7 +252,12 @@ impl VM {
     }
 
     fn get_chunk(&self) -> &Chunk {
-        &self.frames[self.current_frame_index].function.chunk
+        let frame = &self.frames[self.current_frame_index];
+        let function = &self.stack[frame.slots_start_index];
+        match function {
+            Value::Function(func) => &func.chunk,
+            _ => panic!("Tried to get chunk of non function"),
+        }
     }
 
     fn read_byte(&mut self) -> u8 {

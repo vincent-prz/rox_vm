@@ -21,23 +21,42 @@ struct Local {
 
 // useful to distinguish real functions from implicit top level function
 pub enum FunctionType {
-    Function(String, usize),
+    Function(FunDecl),
     Script,
 }
 
 impl Compiler {
     pub fn new(function_type: FunctionType) -> Self {
-        let (func_name, arity) = match &function_type {
-            FunctionType::Function(name, arity) => (name.clone(), arity),
-            FunctionType::Script => (String::from("<script>"), &0),
+        let (func_name, arity, func_local) = match &function_type {
+            FunctionType::Function(decl) => (
+                decl.name.lexeme.clone(),
+                decl.params.len(),
+                Local {
+                    name: decl.name.clone(),
+                    depth: 0,
+                },
+            ),
+            FunctionType::Script => (
+                String::from("<script>"),
+                0 as usize,
+                Local {
+                    name: Token {
+                        lexeme: "".to_string(),
+                        line: 0,
+                        typ: TokenType::Fun,
+                    },
+                    depth: 0,
+                },
+            ),
         };
-        let function = Function::new(func_name, *arity);
+
+        let function = Function::new(func_name, arity);
         Compiler {
             current_line: 0,
             function,
             function_type,
             // TODO: initialize locals like in page 438
-            locals: Vec::new(),
+            locals: vec![func_local],
             scope_depth: 0,
         }
     }
@@ -48,7 +67,7 @@ impl Compiler {
         }
         match self.function_type {
             // adding a return instruction in case the programmer didn't put one
-            FunctionType::Function(_, _) => self.emit_return(),
+            FunctionType::Function(_) => self.emit_return(),
             FunctionType::Script => self.emit_byte(OpCode::OpEof as u8),
         }
 
@@ -183,11 +202,13 @@ impl Compiler {
     }
 
     fn call(&mut self, call: Call) -> Result<(), String> {
+        self.expression(*call.callee)?;
+        let nb_args = call.arguments.len();
         for arg in call.arguments {
             self.expression(arg)?;
         }
-        self.expression(*call.callee)?;
         self.emit_byte(OpCode::OpCall as u8);
+        self.emit_byte(nb_args as u8);
         Ok(())
     }
 
@@ -259,8 +280,7 @@ impl Compiler {
 
     fn fun_decl(&mut self, decl: FunDecl) -> Result<(), String> {
         let func_name = &decl.name.lexeme;
-        let mut compiler =
-            Compiler::new(FunctionType::Function(func_name.clone(), decl.params.len()));
+        let mut compiler = Compiler::new(FunctionType::Function(decl.clone()));
         compiler.scope_depth += 1;
         for param in decl.params {
             compiler.add_local(param)?;

@@ -223,7 +223,7 @@ impl Chunk {
             OpCode::OpJumpIfTrue => self.jump_instruction("OP_JUMP_IF_TRUE", 1, offset),
             OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OpCode::OpLoop => self.jump_instruction("OP_LOOP", -1, offset),
-            OpCode::OpCall => self.simple_instruction("OP_CALL", offset),
+            OpCode::OpCall => self.instruction_with_operand("OP_CALL", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }
