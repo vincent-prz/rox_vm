@@ -68,7 +68,6 @@ impl VM {
 
     fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
-            self.current_frame_index = self.frames.len() - 1;
             #[cfg(feature = "debugTraceExecution")]
             {
                 print!("          ");
@@ -137,6 +136,7 @@ impl VM {
                     let result = self.pop();
                     // [perf] does expect have a penalty cost ?
                     let frame = self.frames.pop().expect("Tried to pop on empty stackframe");
+                    self.current_frame_index -= 1;
                     // remove param arguments from the stack.
                     self.stack.truncate(frame.slots_start_index);
                     self.stack.push(result);
@@ -240,6 +240,7 @@ impl VM {
                                 slots_start_index: self.stack.len() - arity - 1,
                             };
                             self.frames.push(new_frame);
+                            self.current_frame_index += 1;
                         }
                         value => todo!(), // FIXME
                     }
