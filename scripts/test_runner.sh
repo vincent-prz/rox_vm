@@ -18,12 +18,17 @@ for filename in $(ls ${TEST_DIR}/in); do
     input_file="${TEST_DIR}/in/${filename}"
     expected_output_file="${TEST_DIR}/out/${filename}"
     $EXEC_PATH $input_file > "actual"
-    diff $expected_output_file actual > /dev/null
-    if [[ $? -eq 0 ]]; then
-        echo "${filename}: OK"
-    else
-        echo "${RED}${filename}: KO${NOCOLOR}"
+    if [[ $? -eq 101 ]]; then
+        echo "${RED}${filename}: PANICKED${NOCOLOR}"
         nb_failures=$((nb_failures + 1))
+    else
+        diff $expected_output_file actual > /dev/null
+        if [[ $? -eq 0 ]]; then
+            echo "${filename}: OK"
+        else
+            echo "${RED}${filename}: KO${NOCOLOR}"
+            nb_failures=$((nb_failures + 1))
+        fi
     fi
     nb_tests=$((nb_tests + 1))
 done

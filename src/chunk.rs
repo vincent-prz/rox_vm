@@ -31,6 +31,7 @@ pub enum OpCode {
     OpJumpIfTrue,
     OpJumpIfFalse,
     OpLoop,
+    OpCall,
     OpEof,
 }
 
@@ -68,12 +69,14 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpJumpIfTrue as u8 => Ok(OpCode::OpJumpIfTrue),
             x if x == OpCode::OpJumpIfFalse as u8 => Ok(OpCode::OpJumpIfFalse),
             x if x == OpCode::OpLoop as u8 => Ok(OpCode::OpLoop),
+            x if x == OpCode::OpCall as u8 => Ok(OpCode::OpCall),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
     }
 }
 
+#[derive(Clone, PartialEq)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
@@ -81,7 +84,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new() -> Chunk {
+    pub const fn new() -> Chunk {
         Chunk {
             code: Vec::new(),
             constants: Vec::new(),
@@ -128,12 +131,13 @@ impl Chunk {
 /// Line info is encoded with tuples like representing `(offset, lineno).`
 /// where offset is the first offset comprised in lineno.
 /// Assumption: offsets are added in ascending order.
+#[derive(Clone, PartialEq)]
 struct LineInfo {
     info: Vec<(usize, usize)>,
 }
 
 impl LineInfo {
-    fn new() -> LineInfo {
+    const fn new() -> LineInfo {
         LineInfo { info: Vec::new() }
     }
 
@@ -219,6 +223,7 @@ impl Chunk {
             OpCode::OpJumpIfTrue => self.jump_instruction("OP_JUMP_IF_TRUE", 1, offset),
             OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OpCode::OpLoop => self.jump_instruction("OP_LOOP", -1, offset),
+            OpCode::OpCall => self.instruction_with_operand("OP_CALL", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }
