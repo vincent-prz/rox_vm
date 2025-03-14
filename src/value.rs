@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cell::RefCell, fmt, rc::Rc};
 
 use crate::chunk::Chunk;
 
@@ -39,16 +39,18 @@ impl Value {
 #[derive(Clone, PartialEq)]
 pub struct Function {
     pub arity: usize,
-    pub chunk: Chunk,
+    // perf: we need mutability only when compiling, not during runtime
+    // try to remove refcell during runtime
+    pub chunk: Rc<RefCell<Chunk>>,
     pub name: String,
 }
 
 impl Function {
-    pub const fn new(name: String, arity: usize) -> Self {
+    pub fn new(name: String, arity: usize) -> Self {
         Function {
             arity,
             name,
-            chunk: Chunk::new(),
+            chunk: Rc::new(RefCell::new(Chunk::new())),
         }
     }
 }

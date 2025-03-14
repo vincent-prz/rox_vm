@@ -1,3 +1,5 @@
+use std::cell::RefMut;
+
 use crate::ast::{
     Assignment, Binary, Call, Declaration, DeclarationWithLineNo, Expr, FunDecl, IfStmt, LetDecl,
     Literal, Logical, Program, ReturnStmt, Statement, Unary, Variable, WhileStmt,
@@ -375,8 +377,8 @@ impl Compiler {
         None
     }
 
-    fn current_chunk(&mut self) -> &mut Chunk {
-        &mut self.function.chunk
+    fn current_chunk(&mut self) -> RefMut<Chunk> {
+        self.function.chunk.borrow_mut()
     }
 
     fn identifiers_equal(&self, first: &Token, second: &Token) -> bool {

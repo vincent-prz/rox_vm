@@ -1,3 +1,4 @@
+use std::cell::Ref;
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
@@ -252,11 +253,11 @@ impl VM {
         }
     }
 
-    fn get_chunk(&self) -> &Chunk {
+    fn get_chunk(&self) -> Ref<Chunk> {
         let frame = &self.frames[self.current_frame_index];
         let function = &self.stack[frame.slots_start_index];
         match function {
-            Value::Function(func) => &func.chunk,
+            Value::Function(func) => func.chunk.borrow(),
             _ => panic!("Tried to get chunk of non function"),
         }
     }
