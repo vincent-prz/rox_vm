@@ -1,4 +1,5 @@
-use std::cell::RefMut;
+use std::cell::{RefCell, RefMut};
+use std::rc::Rc;
 
 use crate::ast::{
     Assignment, Binary, Call, Declaration, DeclarationWithLineNo, Expr, FunDecl, IfStmt, LetDecl,
@@ -10,7 +11,7 @@ use crate::value::{Function, Value};
 
 pub struct Compiler {
     current_line: u16,
-    pub function: Function,
+    function: CompiledFunction,
     function_type: FunctionType,
     locals: Vec<Local>,
     scope_depth: u8,
@@ -25,6 +26,34 @@ struct Local {
 pub enum FunctionType {
     Function(FunDecl),
     Script,
+}
+
+// this type exists in addition to Function to have a RefCell around the chunk.
+// During runtime (vm file), we need not to mutate the chunk, but during the compilation process we do, hence
+// the distinction, for perf gains od runtime.
+#[derive(Clone, PartialEq)]
+struct CompiledFunction {
+    pub arity: usize,
+    pub chunk: Rc<RefCell<Chunk>>,
+    pub name: String,
+}
+
+impl CompiledFunction {
+    fn new(name: String, arity: usize) -> Self {
+        CompiledFunction {
+            arity,
+            name,
+            chunk: Rc::new(RefCell::new(Chunk::new())),
+        }
+    }
+
+    fn to_function(&self) -> Function {
+        Function {
+            arity: self.arity,
+            name: self.name.clone(),
+            chunk: Rc::new(self.chunk.borrow().clone()),
+        }
+    }
 }
 
 impl Compiler {
@@ -52,7 +81,7 @@ impl Compiler {
             ),
         };
 
-        let function = Function::new(func_name, arity);
+        let function = CompiledFunction::new(func_name, arity);
         Compiler {
             current_line: 0,
             function,
@@ -79,6 +108,10 @@ impl Compiler {
             self.current_chunk().disassemble(&chunk_name);
         }
         Ok(())
+    }
+
+    pub fn get_function(&self) -> Function {
+        self.function.to_function()
     }
 
     fn declaration(&mut self, decl: DeclarationWithLineNo) -> Result<(), String> {
@@ -290,7 +323,7 @@ impl Compiler {
         compiler.run(Program {
             declarations: decl.body,
         })?;
-        self.emit_constant(Value::Function(compiler.function));
+        self.emit_constant(Value::Function(compiler.function.to_function()));
         if self.scope_depth > 0 {
             self.add_local(decl.name)?;
             return Ok(());

@@ -39,18 +39,6 @@ impl Value {
 #[derive(Clone, PartialEq)]
 pub struct Function {
     pub arity: usize,
-    // perf: we need mutability only when compiling, not during runtime
-    // try to remove refcell during runtime
-    pub chunk: Rc<RefCell<Chunk>>,
+    pub chunk: Rc<Chunk>,
     pub name: String,
-}
-
-impl Function {
-    pub fn new(name: String, arity: usize) -> Self {
-        Function {
-            arity,
-            name,
-            chunk: Rc::new(RefCell::new(Chunk::new())),
-        }
-    }
 }
