@@ -1,4 +1,4 @@
-use std::cell::Ref;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
@@ -9,8 +9,6 @@ static FRAMES_MAX: usize = 64;
 // static STACK_MAX: usize =  FRAMES_MAX * UINT8_COUNT;
 
 pub struct VM {
-    frames: Vec<CallFrame>,
-    current_frame_index: usize,
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
     // [perf] should we used a fixed size array ?
     stack: Vec<Value>,
@@ -19,16 +17,18 @@ pub struct VM {
 
 // NOTE - to retrieve the callframe function, we can use `stack[slots_start_index]`
 // this avoids the need to have a `function` field and tricky lifetime issues
-struct CallFrame {
+struct CallFrame<'a> {
+    function: &'a Function,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
     slots_start_index: usize,
 }
 
-impl CallFrame {
-    const fn new(ip: usize, slots_start_index: usize) -> Self {
+impl<'a> CallFrame<'a> {
+    const fn new(function: &'a Function, ip: usize, slots_start_index: usize) -> Self {
         CallFrame {
+            function,
             ip,
             slots_start_index,
         }
@@ -53,11 +53,9 @@ macro_rules! binary_op {
 impl VM {
     pub fn new(function: Function) -> Self {
         let mut frames = Vec::with_capacity(FRAMES_MAX);
-        let current_frame = CallFrame::new(0, 0);
+        let current_frame = CallFrame::new(&function,0, 0);
         frames.push(current_frame);
         VM {
-            frames,
-            current_frame_index: 0,
             stack: vec![Value::Function(function)],
             globals: HashMap::new(),
         }
@@ -67,7 +65,7 @@ impl VM {
         self.run()
     }
 
-    fn run(&mut self) -> Result<(), RuntimeError> {
+    fn run_callframe(&mut self, frame: RefCell<CallFrame>) -> Result<(), RuntimeError> {
         loop {
             #[cfg(feature = "debugTraceExecution")]
             {
@@ -78,13 +76,13 @@ impl VM {
                     print!(" ]");
                 }
                 println!("");
-                // let func_name = match &self.frames[self.current_frame_index].function.name {
+                // let func_name = match &frame.function.name {
                 //     Some(func_name) => func_name.clone(),
                 //     None => String::from("<script>"),
                 // };
                 // print!("{}::", func_name);
                 self.get_chunk()
-                    .disassemble_instruction(self.frames[self.current_frame_index].ip);
+                    .disassemble_instruction(frame.ip);
             }
             let instruction = self.read_byte().try_into().unwrap();
             match instruction {
@@ -135,12 +133,10 @@ impl VM {
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
                 OpCode::OpReturn => {
                     let result = self.pop();
-                    // [perf] does expect have a penalty cost ?
-                    let frame = self.frames.pop().expect("Tried to pop on empty stackframe");
-                    self.current_frame_index -= 1;
                     // remove param arguments from the stack.
-                    self.stack.truncate(frame.slots_start_index);
+                    self.stack.truncate(frame.borrow().slots_start_index);
                     self.stack.push(result);
+                    return Ok(());
                 }
                 OpCode::OpTrue => self.push(Value::Boolean(true)),
                 OpCode::OpFalse => self.push(Value::Boolean(false)),
@@ -208,25 +204,24 @@ impl VM {
                     self.stack[usize_index] = self.peek(0).clone();
                 }
                 OpCode::OpJump => {
-                    // FIXME: find a way to make these current_frame acces DRY without infuriating the borrow checker
-                    self.frames[self.current_frame_index].ip += self.read_short() as usize;
+                    frame.borrow_mut().ip += self.read_short() as usize;
                 }
                 OpCode::OpJumpIfTrue => {
                     let condition_is_truthy = self.peek(0).is_truthy();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_truthy {
-                        self.frames[self.current_frame_index].ip += jump;
+                        frame.borrow_mut().ip += jump;
                     }
                 }
                 OpCode::OpJumpIfFalse => {
                     let condition_is_falsey = self.peek(0).is_falsey();
                     let jump: usize = self.read_short() as usize;
                     if condition_is_falsey {
-                        self.frames[self.current_frame_index].ip += jump;
+                        frame.borrow_mut().ip += jump;
                     }
                 }
                 OpCode::OpLoop => {
-                    self.frames[self.current_frame_index].ip -= self.read_short() as usize;
+                    frame.borrow_mut().ip -= self.read_short() as usize;
                 }
                 OpCode::OpCall => {
                     let nb_args = self.read_byte();
@@ -235,13 +230,13 @@ impl VM {
                         Value::Function(function) => {
                             let arity = function.arity;
                             let new_frame = CallFrame {
+                                function,
                                 ip: 0,
                                 // Subtle: the `- arity` part is for the overlapping of callframes
                                 // windows on the stack, see 24.5.1. - 1 is for the slot reserved for the fucntion itself
                                 slots_start_index: self.stack.len() - arity - 1,
                             };
-                            self.frames.push(new_frame);
-                            self.current_frame_index += 1;
+                            self.run_callframe(RefCell::new(new_frame));
                         }
                         value => todo!(), // FIXME
                     }
@@ -253,8 +248,8 @@ impl VM {
         }
     }
 
-    fn get_chunk(&self) -> Ref<Chunk> {
-        let frame = &self.frames[self.current_frame_index];
+    fn get_chunk(&self, frame: &CallFrame) -> Ref<Chunk> {
+        let frame = frame;
         let function = &self.stack[frame.slots_start_index];
         match function {
             Value::Function(func) => func.chunk.borrow(),
@@ -265,8 +260,8 @@ impl VM {
     fn read_byte(&mut self) -> u8 {
         let result = self
             .get_chunk()
-            .read_byte(self.frames[self.current_frame_index].ip);
-        self.frames[self.current_frame_index].ip += 1;
+            .read_byte(frame.ip);
+        frame.ip += 1;
         result
     }
 
@@ -294,7 +289,7 @@ impl VM {
 
     fn get_local(&self, index: u8) -> Value {
         let usize_index: usize = index.into();
-        let slots_start_index = self.frames[self.current_frame_index].slots_start_index;
+        let slots_start_index = frame.slots_start_index;
         self.stack[usize_index + slots_start_index].clone()
     }
 
@@ -311,7 +306,7 @@ impl VM {
     fn runtime_error(&mut self, msg: String) -> RuntimeError {
         let lineno = self
             .get_chunk()
-            .get_lineno(self.frames[self.current_frame_index].ip - 1);
+            .get_lineno(frame.ip - 1);
         self.reset_stack();
         RuntimeError {
             msg: format!("{}\n[line {}] in script", msg, lineno),
