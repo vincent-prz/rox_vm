@@ -1,12 +1,8 @@
-use std::cell::{Ref, RefCell};
+use std::cell::Ref;
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::value::{Function, Value};
-
-static FRAMES_MAX: usize = 64;
-// static UINT8_COUNT: usize = 256;
-// static STACK_MAX: usize =  FRAMES_MAX * UINT8_COUNT;
 
 pub struct VM {
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
@@ -36,7 +32,7 @@ impl<'a> CallFrame<'a> {
 }
 
 macro_rules! binary_op {
-    ($self:expr, $op:tt, $valueType:expr) => {{
+    ($self:expr, $op:tt, $valueType:expr, $frame:expr) => {{
         let b = $self.pop();
         let a = $self.pop();
         match (a, b) {
@@ -44,28 +40,27 @@ macro_rules! binary_op {
                 $self.push($valueType(x $op y));
             },
             _ => {
-                Err($self.runtime_error("Operands must be numbers".to_string()))?;
+                Err($self.runtime_error("Operands must be numbers".to_string(), $frame))?;
             }
         }
     }};
 }
 
 impl VM {
-    pub fn new(function: Function) -> Self {
-        let mut frames = Vec::with_capacity(FRAMES_MAX);
-        let current_frame = CallFrame::new(&function,0, 0);
-        frames.push(current_frame);
+    pub fn new() -> Self {
         VM {
-            stack: vec![Value::Function(function)],
+            stack: Vec::new(),
             globals: HashMap::new(),
         }
     }
 
-    pub fn interpret(&mut self) -> Result<(), RuntimeError> {
-        self.run()
+    pub fn interpret(&mut self, script_function: Function) -> Result<(), RuntimeError> {
+        self.stack.push(Value::Function(script_function.clone()));
+        let mut first_frame = CallFrame::new(&script_function, 0, 0);
+        self.run_callframe(&mut first_frame)
     }
 
-    fn run_callframe(&mut self, frame: RefCell<CallFrame>) -> Result<(), RuntimeError> {
+    fn run_callframe(&mut self, frame: &mut CallFrame) -> Result<(), RuntimeError> {
         loop {
             #[cfg(feature = "debugTraceExecution")]
             {
@@ -81,20 +76,21 @@ impl VM {
                 //     None => String::from("<script>"),
                 // };
                 // print!("{}::", func_name);
-                self.get_chunk()
-                    .disassemble_instruction(frame.ip);
+                self.get_chunk().disassemble_instruction(frame.ip);
             }
-            let instruction = self.read_byte().try_into().unwrap();
+            let instruction = self.read_byte(frame).try_into().unwrap();
             match instruction {
                 OpCode::OpConstant => {
-                    let constant = self.read_constant();
+                    let constant = self.read_constant(frame);
                     self.push(constant);
                 }
                 OpCode::OpNegate => {
                     let value = self.pop();
                     match value {
                         Value::Number(number) => self.push(Value::Number(-number)),
-                        _ => Err(self.runtime_error("Operand must be a number".to_string()))?,
+                        _ => {
+                            Err(self.runtime_error("Operand must be a number".to_string(), frame))?
+                        }
                     }
                 }
                 OpCode::OpAdd => {
@@ -110,13 +106,14 @@ impl VM {
                         _ => {
                             Err(self.runtime_error(
                                 "Operands must be two numbers or two strings".to_string(),
+                                frame,
                             ))?;
                         }
                     }
                 }
-                OpCode::OpSubtract => binary_op!(self, -, Value::Number),
-                OpCode::OpMultiply => binary_op!(self, *, Value::Number),
-                OpCode::OpDivide => binary_op!(self, /, Value::Number),
+                OpCode::OpSubtract => binary_op!(self, -, Value::Number, frame),
+                OpCode::OpMultiply => binary_op!(self, *, Value::Number, frame),
+                OpCode::OpDivide => binary_op!(self, /, Value::Number, frame),
                 OpCode::OpEqualEqual => {
                     let b = self.pop();
                     let a = self.pop();
@@ -127,14 +124,14 @@ impl VM {
                     let a = self.pop();
                     self.push(Value::Boolean(a != b));
                 }
-                OpCode::OpLess => binary_op!(self, <, Value::Boolean),
-                OpCode::OpLessEqual => binary_op!(self, <=, Value::Boolean),
-                OpCode::OpGreater => binary_op!(self, >, Value::Boolean),
-                OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean),
+                OpCode::OpLess => binary_op!(self, <, Value::Boolean, frame),
+                OpCode::OpLessEqual => binary_op!(self, <=, Value::Boolean, frame),
+                OpCode::OpGreater => binary_op!(self, >, Value::Boolean, frame),
+                OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean, frame),
                 OpCode::OpReturn => {
                     let result = self.pop();
                     // remove param arguments from the stack.
-                    self.stack.truncate(frame.borrow().slots_start_index);
+                    self.stack.truncate(frame.slots_start_index);
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -144,7 +141,9 @@ impl VM {
                     let value = self.pop();
                     match value {
                         Value::Boolean(b) => self.push(Value::Boolean(!b)),
-                        _ => Err(self.runtime_error("Operand must be a boolean".to_string()))?,
+                        _ => {
+                            Err(self.runtime_error("Operand must be a boolean".to_string(), frame))?
+                        }
                     }
                 }
                 OpCode::OpPrint => {
@@ -152,91 +151,94 @@ impl VM {
                 }
                 OpCode::OpDefineGlobal => {
                     let value = self.pop();
-                    let constant = self.read_constant();
+                    let constant = self.read_constant(frame);
                     if let Value::Str(constant) = constant {
                         self.globals.insert(constant, value);
                     } else {
-                        Err(self.runtime_error("Expected string constant".to_string()))?;
+                        Err(self.runtime_error("Expected string constant".to_string(), frame))?;
                     }
                 }
                 OpCode::OpGetGlobal => {
-                    let constant = self.read_constant();
+                    let constant = self.read_constant(frame);
                     if let Value::Str(constant) = constant {
                         if let Some(value) = self.globals.get(&constant) {
                             self.push(value.clone());
                         } else {
-                            Err(self.runtime_error(format!("Undefined variable '{}'", constant)))?;
+                            Err(self.runtime_error(
+                                format!("Undefined variable '{}'", constant),
+                                frame,
+                            ))?;
                         }
                     } else {
-                        Err(self.runtime_error("Expected string constant".to_string()))?;
+                        Err(self.runtime_error("Expected string constant".to_string(), frame))?;
                     }
                 }
                 OpCode::OpSetGlobal => {
-                    let constant = self.read_constant();
+                    let constant = self.read_constant(frame);
                     if let Value::Str(constant) = constant {
                         if self.globals.contains_key(&constant) {
                             self.globals.insert(constant, self.peek(0).clone());
                         } else {
-                            Err(self.runtime_error(format!(
-                                "Cannot assign undefined variable {}.",
-                                constant
-                            )))?;
+                            Err(self.runtime_error(
+                                format!("Cannot assign undefined variable {}.", constant),
+                                frame,
+                            ))?;
                         }
                     } else {
-                        Err(self.runtime_error("Expected string constant".to_string()))?;
+                        Err(self.runtime_error("Expected string constant".to_string(), frame))?;
                     }
                 }
                 OpCode::OpPop => {
                     self.pop();
                 }
                 OpCode::OpPopN => {
-                    let nb_elems_to_pop = self.read_byte();
+                    let nb_elems_to_pop = self.read_byte(frame);
                     self.pop_n(nb_elems_to_pop);
                 }
                 OpCode::OpGetLocal => {
-                    let local_index = self.read_byte();
-                    let local_value = self.get_local(local_index);
+                    let local_index = self.read_byte(frame);
+                    let local_value = self.get_local(local_index, frame);
                     self.stack.push(local_value)
                 }
                 OpCode::OpSetLocal => {
-                    let local_index = self.read_byte();
+                    let local_index = self.read_byte(frame);
                     let usize_index: usize = local_index.into();
                     self.stack[usize_index] = self.peek(0).clone();
                 }
                 OpCode::OpJump => {
-                    frame.borrow_mut().ip += self.read_short() as usize;
+                    frame.ip += self.read_short(frame) as usize;
                 }
                 OpCode::OpJumpIfTrue => {
                     let condition_is_truthy = self.peek(0).is_truthy();
-                    let jump: usize = self.read_short() as usize;
+                    let jump: usize = self.read_short(frame) as usize;
                     if condition_is_truthy {
-                        frame.borrow_mut().ip += jump;
+                        frame.ip += jump;
                     }
                 }
                 OpCode::OpJumpIfFalse => {
                     let condition_is_falsey = self.peek(0).is_falsey();
-                    let jump: usize = self.read_short() as usize;
+                    let jump: usize = self.read_short(frame) as usize;
                     if condition_is_falsey {
-                        frame.borrow_mut().ip += jump;
+                        frame.ip += jump;
                     }
                 }
                 OpCode::OpLoop => {
-                    frame.borrow_mut().ip -= self.read_short() as usize;
+                    frame.ip -= self.read_short(frame) as usize;
                 }
                 OpCode::OpCall => {
-                    let nb_args = self.read_byte();
+                    let nb_args = self.read_byte(frame);
                     let callee = self.peek(nb_args as usize);
                     match callee {
                         Value::Function(function) => {
                             let arity = function.arity;
-                            let new_frame = CallFrame {
-                                function,
+                            let mut new_frame = CallFrame {
+                                function: &function.clone(),
                                 ip: 0,
                                 // Subtle: the `- arity` part is for the overlapping of callframes
-                                // windows on the stack, see 24.5.1. - 1 is for the slot reserved for the fucntion itself
+                                // windows on the stack, see 24.5.1. - 1 is for the slot reserved for the function itself
                                 slots_start_index: self.stack.len() - arity - 1,
                             };
-                            self.run_callframe(RefCell::new(new_frame));
+                            self.run_callframe(&mut new_frame)?;
                         }
                         value => todo!(), // FIXME
                     }
@@ -248,26 +250,19 @@ impl VM {
         }
     }
 
-    fn get_chunk(&self, frame: &CallFrame) -> Ref<Chunk> {
-        let frame = frame;
-        let function = &self.stack[frame.slots_start_index];
-        match function {
-            Value::Function(func) => func.chunk.borrow(),
-            _ => panic!("Tried to get chunk of non function"),
-        }
+    fn get_chunk<'a>(&self, frame: &CallFrame<'a>) -> Ref<'a, Chunk> {
+        frame.function.chunk.borrow()
     }
 
-    fn read_byte(&mut self) -> u8 {
-        let result = self
-            .get_chunk()
-            .read_byte(frame.ip);
+    fn read_byte(&mut self, frame: &mut CallFrame) -> u8 {
+        let result = self.get_chunk(frame).read_byte(frame.ip);
         frame.ip += 1;
         result
     }
 
-    fn read_constant(&mut self) -> Value {
-        let byte = self.read_byte();
-        self.get_chunk().read_constant(byte)
+    fn read_constant(&mut self, frame: &mut CallFrame) -> Value {
+        let byte = self.read_byte(frame);
+        self.get_chunk(frame).read_constant(byte)
     }
 
     fn push(&mut self, value: Value) {
@@ -287,7 +282,7 @@ impl VM {
         self.stack.truncate(new_len);
     }
 
-    fn get_local(&self, index: u8) -> Value {
+    fn get_local(&self, index: u8, frame: &CallFrame) -> Value {
         let usize_index: usize = index.into();
         let slots_start_index = frame.slots_start_index;
         self.stack[usize_index + slots_start_index].clone()
@@ -297,16 +292,14 @@ impl VM {
         self.stack.clear();
     }
 
-    fn read_short(&mut self) -> u16 {
-        let x: u16 = self.read_byte().into();
-        let y: u16 = self.read_byte().into();
+    fn read_short(&mut self, frame: &mut CallFrame) -> u16 {
+        let x: u16 = self.read_byte(frame).into();
+        let y: u16 = self.read_byte(frame).into();
         (x << 8) | y
     }
 
-    fn runtime_error(&mut self, msg: String) -> RuntimeError {
-        let lineno = self
-            .get_chunk()
-            .get_lineno(frame.ip - 1);
+    fn runtime_error(&mut self, msg: String, frame: &CallFrame) -> RuntimeError {
+        let lineno = self.get_chunk(frame).get_lineno(frame.ip - 1);
         self.reset_stack();
         RuntimeError {
             msg: format!("{}\n[line {}] in script", msg, lineno),

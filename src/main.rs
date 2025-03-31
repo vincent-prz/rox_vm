@@ -76,8 +76,8 @@ fn run(source: String) {
         exit(65);
     }
 
-    let mut vm = VM::new(compiler.function);
-    match vm.interpret() {
+    let mut vm = VM::new();
+    match vm.interpret(compiler.function) {
         Err(RuntimeError { msg }) => {
             println!("{}", msg);
             exit(70);
