@@ -240,7 +240,11 @@ impl VM {
                             };
                             self.run_callframe(&mut new_frame)?;
                         }
-                        value => todo!(), // FIXME
+                        value => {
+                            return Err(
+                                self.runtime_error("Can only call functions".to_string(), frame)
+                            );
+                        }
                     }
                 }
                 OpCode::OpEof => {
