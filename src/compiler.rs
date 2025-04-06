@@ -1,14 +1,17 @@
+use std::cell::RefMut;
+
 use crate::ast::{
-    Assignment, Binary, Declaration, DeclarationWithLineNo, Expr, IfStmt, LetDecl, Literal,
-    Logical, Program, Statement, Unary, Variable, WhileStmt,
+    Assignment, Binary, Call, Declaration, DeclarationWithLineNo, Expr, FunDecl, IfStmt, LetDecl,
+    Literal, Logical, Program, ReturnStmt, Statement, Unary, Variable, WhileStmt,
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
-use crate::value::Value;
+use crate::value::{Function, Value};
 
-pub struct Compiler<'a> {
+pub struct Compiler {
     current_line: u16,
-    current_chunk: &'a mut Chunk,
+    pub function: Function,
+    function_type: FunctionType,
     locals: Vec<Local>,
     scope_depth: u8,
 }
@@ -18,12 +21,44 @@ struct Local {
     depth: u8,
 }
 
-impl<'a> Compiler<'a> {
-    pub fn new(chunk: &'a mut Chunk) -> Self {
+// useful to distinguish real functions from implicit top level function
+pub enum FunctionType {
+    Function(FunDecl),
+    Script,
+}
+
+impl Compiler {
+    pub fn new(function_type: FunctionType) -> Self {
+        let (func_name, arity, func_local) = match &function_type {
+            FunctionType::Function(decl) => (
+                decl.name.lexeme.clone(),
+                decl.params.len(),
+                Local {
+                    name: decl.name.clone(),
+                    depth: 0,
+                },
+            ),
+            FunctionType::Script => (
+                String::from("<script>"),
+                0 as usize,
+                Local {
+                    name: Token {
+                        lexeme: "".to_string(),
+                        line: 0,
+                        typ: TokenType::Fun,
+                    },
+                    depth: 0,
+                },
+            ),
+        };
+
+        let function = Function::new(func_name, arity);
         Compiler {
             current_line: 0,
-            current_chunk: chunk,
-            locals: Vec::new(),
+            function,
+            function_type,
+            // TODO: initialize locals like in page 438
+            locals: vec![func_local],
             scope_depth: 0,
         }
     }
@@ -32,10 +67,16 @@ impl<'a> Compiler<'a> {
         for decl in program_ast.declarations {
             self.declaration(decl)?;
         }
-        self.emit_byte(OpCode::OpEof as u8);
+        match self.function_type {
+            // adding a return instruction in case the programmer didn't put one
+            FunctionType::Function(_) => self.emit_return(),
+            FunctionType::Script => self.emit_byte(OpCode::OpEof as u8),
+        }
+
         #[cfg(feature = "debugPrintCode")]
         {
-            self.current_chunk.disassemble("code");
+            let chunk_name = self.function.name.clone();
+            self.current_chunk().disassemble(&chunk_name);
         }
         Ok(())
     }
@@ -44,7 +85,7 @@ impl<'a> Compiler<'a> {
         let inner_decl = decl.decl;
         self.current_line = decl.lineno;
         match inner_decl {
-            Declaration::FunDecl(_) => todo!(),
+            Declaration::FunDecl(decl) => self.fun_decl(decl),
             Declaration::LetDecl(decl) => self.let_decl(decl),
             Declaration::Statement(statement) => self.statement(statement),
         }
@@ -60,7 +101,7 @@ impl<'a> Compiler<'a> {
             }
             Statement::IfStmt(if_stmt) => self.if_statement(if_stmt),
             Statement::PrintStmt(expr) => self.print_statement(expr),
-            Statement::ReturnStmt(_) => self.return_statement(),
+            Statement::ReturnStmt(ret_stmt) => self.return_statement(ret_stmt),
             Statement::WhileStmt(while_stmt) => self.while_statement(while_stmt),
             Statement::Block(declarations) => self.block(declarations),
         }
@@ -99,7 +140,7 @@ impl<'a> Compiler<'a> {
             Expr::Literal(literal) => self.literal(literal),
             Expr::Unary(op) => self.unary(op),
             Expr::Binary(op) => self.binary(op),
-            Expr::Call(_) => todo!(),
+            Expr::Call(call) => self.call(call),
             Expr::Grouping(group) => self.expression(*group.expression),
             Expr::Variable(variable) => self.variable(variable),
             Expr::Assignment(assignment) => self.assignment(assignment),
@@ -162,6 +203,17 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn call(&mut self, call: Call) -> Result<(), String> {
+        self.expression(*call.callee)?;
+        let nb_args = call.arguments.len();
+        for arg in call.arguments {
+            self.expression(arg)?;
+        }
+        self.emit_byte(OpCode::OpCall as u8);
+        self.emit_byte(nb_args as u8);
+        Ok(())
+    }
+
     fn logical(&mut self, op: Logical) -> Result<(), String> {
         self.expression(*op.left)?;
         match op.operator.typ {
@@ -185,7 +237,12 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn return_statement(&mut self) -> Result<(), String> {
+    fn return_statement(&mut self, ret_stmt: ReturnStmt) -> Result<(), String> {
+        match ret_stmt.expr {
+            Some(expr) => self.expression(expr)?,
+            // FIXME: hack - putting 0 as a result when returning nothing
+            None => self.emit_constant(Value::Number(0.)),
+        };
         self.emit_byte(OpCode::OpReturn as u8);
         Ok(())
     }
@@ -197,7 +254,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn while_statement(&mut self, while_stmt: WhileStmt) -> Result<(), String> {
-        let loop_start = self.current_chunk.count();
+        let loop_start = self.current_chunk().count();
         self.expression(while_stmt.condition)?;
         let jump_offset = self.emit_jump(OpCode::OpJumpIfFalse as u8);
         self.emit_byte(OpCode::OpPop as u8);
@@ -219,6 +276,26 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
         let constant = self.make_constant(Value::Str(decl.identifier.lexeme));
+        self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
+        Ok(())
+    }
+
+    fn fun_decl(&mut self, decl: FunDecl) -> Result<(), String> {
+        let func_name = &decl.name.lexeme;
+        let mut compiler = Compiler::new(FunctionType::Function(decl.clone()));
+        compiler.scope_depth += 1;
+        for param in decl.params {
+            compiler.add_local(param)?;
+        }
+        compiler.run(Program {
+            declarations: decl.body,
+        })?;
+        self.emit_constant(Value::Function(compiler.function));
+        if self.scope_depth > 0 {
+            self.add_local(decl.name)?;
+            return Ok(());
+        }
+        let constant = self.make_constant(Value::Str(func_name.clone()));
         self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         Ok(())
     }
@@ -300,6 +377,10 @@ impl<'a> Compiler<'a> {
         None
     }
 
+    fn current_chunk(&mut self) -> RefMut<Chunk> {
+        self.function.chunk.borrow_mut()
+    }
+
     fn identifiers_equal(&self, first: &Token, second: &Token) -> bool {
         first.lexeme == second.lexeme
     }
@@ -312,7 +393,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_byte(&mut self, byte: u8) {
-        self.current_chunk.write(byte, self.current_line as usize);
+        let lineno = self.current_line;
+        self.current_chunk().write(byte, lineno as usize);
     }
 
     fn emit_bytes(&mut self, byte1: u8, byte2: u8) {
@@ -325,31 +407,37 @@ impl<'a> Compiler<'a> {
         self.emit_bytes(OpCode::OpConstant as u8, constant);
     }
 
+    fn emit_return(&mut self) {
+        // FIXME: hack - putting 0 as a result nothing is returned
+        self.emit_constant(Value::Number(0.));
+        self.emit_byte(OpCode::OpReturn as u8);
+    }
+
     fn emit_jump(&mut self, instruction: u8) -> usize {
         self.emit_byte(instruction);
         self.emit_byte(0);
         self.emit_byte(0);
-        self.current_chunk.count() - 2
+        self.current_chunk().count() - 2
     }
 
     /// fill jump operand specified at offset, namely jump to current location
     fn patch_jump(&mut self, offset: usize) {
-        let jump = self.current_chunk.count() - offset - 2;
-        self.current_chunk
+        let jump = self.current_chunk().count() - offset - 2;
+        self.current_chunk()
             .replace_at((jump >> 8 & 0xff).try_into().unwrap(), offset);
-        self.current_chunk
+        self.current_chunk()
             .replace_at((jump & 0xff).try_into().unwrap(), offset + 1);
     }
 
     fn emit_loop(&mut self, start_loop: usize) -> usize {
         self.emit_byte(OpCode::OpLoop as u8);
-        let loop_size = self.current_chunk.count() - start_loop + 2;
+        let loop_size = self.current_chunk().count() - start_loop + 2;
         self.emit_byte((loop_size >> 8 & 0xff).try_into().unwrap());
         self.emit_byte((loop_size & 0xff).try_into().unwrap());
-        self.current_chunk.count() - 2
+        self.current_chunk().count() - 2
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {
-        self.current_chunk.add_constant(value)
+        self.current_chunk().add_constant(value)
     }
 }
