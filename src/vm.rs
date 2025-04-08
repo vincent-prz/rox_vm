@@ -231,6 +231,15 @@ impl VM {
                     match callee {
                         Value::Function(function) => {
                             let arity = function.arity;
+                            if arity != nb_args as usize {
+                                return Err(self.runtime_error(
+                                    format!(
+                                        "Expected {} arguments for {}, received {}",
+                                        arity, function.name, nb_args
+                                    ),
+                                    frame,
+                                ));
+                            }
                             let mut new_frame = CallFrame {
                                 function: &function.clone(),
                                 ip: 0,
@@ -240,7 +249,7 @@ impl VM {
                             };
                             self.run_callframe(&mut new_frame)?;
                         }
-                        value => {
+                        _ => {
                             return Err(
                                 self.runtime_error("Can only call functions".to_string(), frame)
                             );
