@@ -1,4 +1,9 @@
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{
+    cell::RefCell,
+    fmt,
+    rc::Rc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::chunk::Chunk;
 
@@ -8,6 +13,7 @@ pub enum Value {
     Boolean(bool),
     Str(String),
     Function(Function),
+    NativeFunction(NativeFunction),
 }
 
 impl fmt::Display for Value {
@@ -17,6 +23,7 @@ impl fmt::Display for Value {
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
             Value::Function(function) => write!(f, "<fn {}>", function.name),
+            Value::NativeFunction(function) => write!(f, "<fn {}>", function.name),
         }
     }
 }
@@ -28,6 +35,7 @@ impl Value {
             Value::Boolean(b) => !b,
             Value::Str(s) => s == "",
             Value::Function(_) => false,
+            Value::NativeFunction(_) => false,
         }
     }
 
@@ -39,8 +47,6 @@ impl Value {
 #[derive(Clone, PartialEq)]
 pub struct Function {
     pub arity: usize,
-    // perf: we need mutability only when compiling, not during runtime
-    // try to remove refcell during runtime
     pub chunk: Rc<RefCell<Chunk>>,
     pub name: String,
 }
@@ -53,4 +59,47 @@ impl Function {
             chunk: Rc::new(RefCell::new(Chunk::new())),
         }
     }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct NativeFunction {
+    pub arity: usize,
+    pub name: String,
+    implementation: NativeFunctionImpl,
+}
+
+impl NativeFunction {
+    pub fn call(&self, arg_count: usize, args: &[Value]) -> Result<Value, String> {
+        self.implementation.call(arg_count, args)
+    }
+}
+
+#[derive(Clone, PartialEq)]
+enum NativeFunctionImpl {
+    NativeClock,
+}
+
+impl NativeFunctionImpl {
+    fn call(&self, arg_count: usize, args: &[Value]) -> Result<Value, String> {
+        match self {
+            NativeFunctionImpl::NativeClock => clock_native(arg_count, args),
+        }
+    }
+}
+
+pub fn get_clock_native_func() -> NativeFunction {
+    NativeFunction {
+        arity: 0,
+        name: String::from("clock"),
+        implementation: NativeFunctionImpl::NativeClock,
+    }
+}
+
+fn clock_native(_arg_count: usize, _args: &[Value]) -> Result<Value, String> {
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    let value = Value::Number(since_the_epoch.as_secs() as f64);
+    Ok(value)
 }

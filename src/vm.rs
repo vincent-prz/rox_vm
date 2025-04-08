@@ -2,7 +2,7 @@ use std::cell::Ref;
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
-use crate::value::{Function, Value};
+use crate::value::{get_clock_native_func, Function, NativeFunction, Value};
 
 pub struct VM {
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
@@ -48,10 +48,12 @@ macro_rules! binary_op {
 
 impl VM {
     pub fn new() -> Self {
-        VM {
+        let mut vm = VM {
             stack: Vec::new(),
             globals: HashMap::new(),
-        }
+        };
+        vm.define_native(get_clock_native_func());
+        vm
     }
 
     pub fn interpret(&mut self, script_function: Function) -> Result<(), RuntimeError> {
@@ -249,6 +251,27 @@ impl VM {
                             };
                             self.run_callframe(&mut new_frame)?;
                         }
+                        Value::NativeFunction(function) => {
+                            let arity = function.arity;
+                            if arity != nb_args as usize {
+                                return Err(self.runtime_error(
+                                    format!(
+                                        "Expected {} arguments for {}, received {}",
+                                        arity, function.name, nb_args
+                                    ),
+                                    frame,
+                                ));
+                            }
+                            let result = function
+                                .call(nb_args as usize, &self.stack[self.stack.len() - arity..]);
+                            self.stack.truncate(self.stack.len() - arity);
+                            if let Err(msg) = result {
+                                return Err(self.runtime_error(msg, frame));
+                            }
+                            if let Ok(value) = result {
+                                self.push(value);
+                            }
+                        }
                         _ => {
                             return Err(
                                 self.runtime_error("Can only call functions".to_string(), frame)
@@ -317,6 +340,11 @@ impl VM {
         RuntimeError {
             msg: format!("{}\n[line {}] in script", msg, lineno),
         }
+    }
+
+    fn define_native(&mut self, func: NativeFunction) {
+        self.globals
+            .insert(func.name.clone(), Value::NativeFunction(func));
     }
 }
 
