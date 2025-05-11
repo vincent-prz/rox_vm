@@ -13,6 +13,7 @@ pub enum Value {
     Boolean(bool),
     Str(String),
     Function(Function),
+    Closure(Closure),
     NativeFunction(NativeFunction),
 }
 
@@ -23,6 +24,7 @@ impl fmt::Display for Value {
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
             Value::Function(function) => write!(f, "<fn {}>", function.name),
+            Value::Closure(closure) => write!(f, "<fn {}>", closure.function.name),
             Value::NativeFunction(function) => write!(f, "<fn {}>", function.name),
         }
     }
@@ -35,6 +37,7 @@ impl Value {
             Value::Boolean(b) => !b,
             Value::Str(s) => s == "",
             Value::Function(_) => false,
+            Value::Closure(_) => false,
             Value::NativeFunction(_) => false,
         }
     }
@@ -58,6 +61,17 @@ impl Function {
             name,
             chunk: Rc::new(RefCell::new(Chunk::new())),
         }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Closure {
+    pub function: Function,
+}
+
+impl Closure {
+    pub fn new(function: Function) -> Self {
+        Closure { function }
     }
 }
 

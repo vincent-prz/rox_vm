@@ -290,13 +290,13 @@ impl Compiler {
         compiler.run(Program {
             declarations: decl.body,
         })?;
-        self.emit_constant(Value::Function(compiler.function));
+        self.emit_closure(Value::Function(compiler.function));
         if self.scope_depth > 0 {
             self.add_local(decl.name)?;
-            return Ok(());
+        } else {
+            let constant = self.make_constant(Value::Str(func_name.clone()));
+            self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         }
-        let constant = self.make_constant(Value::Str(func_name.clone()));
-        self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         Ok(())
     }
 
@@ -405,6 +405,11 @@ impl Compiler {
     fn emit_constant(&mut self, value: Value) {
         let constant = self.make_constant(value);
         self.emit_bytes(OpCode::OpConstant as u8, constant);
+    }
+
+    fn emit_closure(&mut self, value: Value) {
+        let constant = self.make_constant(value);
+        self.emit_bytes(OpCode::OpClosure as u8, constant);
     }
 
     fn emit_return(&mut self) {

@@ -2,7 +2,7 @@ use std::cell::Ref;
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
-use crate::value::{get_clock_native_func, Function, NativeFunction, Value};
+use crate::value::{get_clock_native_func, Closure, Function, NativeFunction, Value};
 
 pub struct VM {
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
@@ -14,7 +14,7 @@ pub struct VM {
 // NOTE - to retrieve the callframe function, we can use `stack[slots_start_index]`
 // this avoids the need to have a `function` field and tricky lifetime issues
 struct CallFrame<'a> {
-    function: &'a Function,
+    closure: &'a Closure,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
@@ -22,9 +22,9 @@ struct CallFrame<'a> {
 }
 
 impl<'a> CallFrame<'a> {
-    const fn new(function: &'a Function, ip: usize, slots_start_index: usize) -> Self {
+    const fn new(closure: &'a Closure, ip: usize, slots_start_index: usize) -> Self {
         CallFrame {
-            function,
+            closure,
             ip,
             slots_start_index,
         }
@@ -57,8 +57,9 @@ impl VM {
     }
 
     pub fn interpret(&mut self, script_function: Function) -> Result<(), RuntimeError> {
-        self.stack.push(Value::Function(script_function.clone()));
-        let mut first_frame = CallFrame::new(&script_function, 0, 0);
+        let script_closure = Closure::new(script_function.clone());
+        self.stack.push(Value::Closure(script_closure.clone()));
+        let mut first_frame = CallFrame::new(&script_closure, 0, 0);
         self.run_callframe(&mut first_frame)
     }
 
@@ -231,19 +232,19 @@ impl VM {
                     let nb_args = self.read_byte(frame);
                     let callee = self.peek(nb_args as usize);
                     match callee {
-                        Value::Function(function) => {
-                            let arity = function.arity;
+                        Value::Closure(closure) => {
+                            let arity = closure.function.arity;
                             if arity != nb_args as usize {
                                 return Err(self.runtime_error(
                                     format!(
                                         "Expected {} arguments for {}, received {}",
-                                        arity, function.name, nb_args
+                                        arity, closure.function.name, nb_args
                                     ),
                                     frame,
                                 ));
                             }
                             let mut new_frame = CallFrame {
-                                function: &function.clone(),
+                                closure: &closure.clone(),
                                 ip: 0,
                                 // Subtle: the `- arity` part is for the overlapping of callframes
                                 // windows on the stack, see 24.5.1. - 1 is for the slot reserved for the function itself
@@ -279,6 +280,15 @@ impl VM {
                         }
                     }
                 }
+                OpCode::OpClosure => {
+                    let function_value = self.read_constant(frame);
+                    match function_value {
+                        Value::Function(function) => {
+                            self.push(Value::Closure(Closure::new(function)));
+                        }
+                        _ => panic!("Expected a function to wrap in closure"),
+                    }
+                }
                 OpCode::OpEof => {
                     return Ok(());
                 }
@@ -287,7 +297,7 @@ impl VM {
     }
 
     fn get_chunk<'a>(&self, frame: &CallFrame<'a>) -> Ref<'a, Chunk> {
-        frame.function.chunk.borrow()
+        frame.closure.function.chunk.borrow()
     }
 
     fn read_byte(&mut self, frame: &mut CallFrame) -> u8 {
