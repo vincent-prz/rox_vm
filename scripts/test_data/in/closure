@@ -1,0 +1,9 @@
+fun makeClosure(value) {
+  fun closure() {
+    print value;
+    }
+  closure();
+}
+
+let doughnut = makeClosure("doughnut");
+let bagel = makeClosure("bagel");
