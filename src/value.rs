@@ -52,6 +52,7 @@ pub struct Function {
     pub arity: usize,
     pub chunk: Rc<RefCell<Chunk>>,
     pub name: String,
+    pub up_values: Vec<UpValue>,
 }
 
 impl Function {
@@ -60,19 +61,42 @@ impl Function {
             arity,
             name,
             chunk: Rc::new(RefCell::new(Chunk::new())),
+            up_values: vec![],
         }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct UpValue {
+    pub index: u8,
+    pub is_local: bool,
+}
+
+impl UpValue {
+    pub fn new(index: u8, is_local: bool) -> Self {
+        UpValue { index, is_local }
     }
 }
 
 #[derive(Clone, PartialEq)]
 pub struct Closure {
     pub function: Function,
+    pub up_values: Vec<RuntimeUpValue>,
 }
 
 impl Closure {
     pub fn new(function: Function) -> Self {
-        Closure { function }
+        Closure {
+            function,
+            up_values: vec![],
+        }
     }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct RuntimeUpValue {
+    pub index: usize, // this will be the index on the stack
+    pub is_local: bool,
 }
 
 #[derive(Clone, PartialEq)]

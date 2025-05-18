@@ -6,9 +6,11 @@ use crate::ast::{
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
-use crate::value::{Function, Value};
+use crate::value::{Function, UpValue, Value};
 
+#[derive(Clone)]
 pub struct Compiler {
+    enclosing: Option<Box<Compiler>>,
     current_line: u16,
     pub function: Function,
     function_type: FunctionType,
@@ -16,19 +18,21 @@ pub struct Compiler {
     scope_depth: u8,
 }
 
+#[derive(Clone)]
 struct Local {
     name: Token,
     depth: u8,
 }
 
 // useful to distinguish real functions from implicit top level function
+#[derive(Clone)]
 pub enum FunctionType {
     Function(FunDecl),
     Script,
 }
 
 impl Compiler {
-    pub fn new(function_type: FunctionType) -> Self {
+    pub fn new(function_type: FunctionType, enclosing: Option<Box<Compiler>>) -> Self {
         let (func_name, arity, func_local) = match &function_type {
             FunctionType::Function(decl) => (
                 decl.name.lexeme.clone(),
@@ -60,6 +64,7 @@ impl Compiler {
             // TODO: initialize locals like in page 438
             locals: vec![func_local],
             scope_depth: 0,
+            enclosing,
         }
     }
 
@@ -282,7 +287,13 @@ impl Compiler {
 
     fn fun_decl(&mut self, decl: FunDecl) -> Result<(), String> {
         let func_name = &decl.name.lexeme;
-        let mut compiler = Compiler::new(FunctionType::Function(decl.clone()));
+        // we can clone self because of 2 assumptions:
+        // self don't need to be mutated by compilation of child
+        // we can tolerate the perf cost during compile time
+        let mut compiler = Compiler::new(
+            FunctionType::Function(decl.clone()),
+            Some(Box::new(self.clone())),
+        );
         compiler.scope_depth += 1;
         for param in decl.params {
             compiler.add_local(param)?;
@@ -304,10 +315,15 @@ impl Compiler {
         let local_index = self.resolve_local(&variable.name);
         match local_index {
             Some(index) => self.emit_bytes(OpCode::OpGetLocal as u8, index.try_into().unwrap()),
-            None => {
-                let constant = self.make_constant(Value::Str(variable.name.lexeme));
-                self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
-            }
+            None => match self.resolve_upvalue(&variable.name) {
+                Some(index) => {
+                    self.emit_bytes(OpCode::OpGetUpValue as u8, index.try_into().unwrap());
+                }
+                None => {
+                    let constant = self.make_constant(Value::Str(variable.name.lexeme));
+                    self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
+                }
+            },
         };
         Ok(())
     }
@@ -375,6 +391,28 @@ impl Compiler {
             }
         }
         None
+    }
+
+    fn resolve_upvalue(&mut self, name: &Token) -> Option<usize> {
+        match &self.enclosing {
+            Some(enclosing) => match enclosing.resolve_local(name) {
+                Some(index) => {
+                    return Some(self.add_upvalue(index as u8, true));
+                }
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    fn add_upvalue(&mut self, index: u8, is_local: bool) -> usize {
+        for (i, up_value) in self.function.up_values.iter().enumerate() {
+            if up_value.index == index && up_value.is_local == is_local {
+                return i;
+            }
+        }
+        self.function.up_values.push(UpValue::new(index, is_local));
+        self.function.up_values.len() - 1
     }
 
     fn current_chunk(&mut self) -> RefMut<Chunk> {

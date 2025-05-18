@@ -2,7 +2,9 @@ use std::cell::Ref;
 use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
-use crate::value::{get_clock_native_func, Closure, Function, NativeFunction, Value};
+use crate::value::{
+    get_clock_native_func, Closure, Function, NativeFunction, RuntimeUpValue, Value,
+};
 
 pub struct VM {
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
@@ -243,8 +245,18 @@ impl VM {
                                     frame,
                                 ));
                             }
+                            // TODO: check with book impl
+                            let current_closure = &mut closure.clone();
+                            for upvalue in &current_closure.function.up_values {
+                                let stack_index = upvalue.index as usize + frame.slots_start_index;
+                                current_closure.up_values.push(RuntimeUpValue {
+                                    index: stack_index,
+                                    is_local: upvalue.is_local,
+                                });
+                            }
+
                             let mut new_frame = CallFrame {
-                                closure: &closure.clone(),
+                                closure: current_closure,
                                 ip: 0,
                                 // Subtle: the `- arity` part is for the overlapping of callframes
                                 // windows on the stack, see 24.5.1. - 1 is for the slot reserved for the function itself
@@ -289,6 +301,19 @@ impl VM {
                         _ => panic!("Expected a function to wrap in closure"),
                     }
                 }
+                OpCode::OpGetUpValue => {
+                    // TODO: check book implem
+                    let upvalue_index = self.read_byte(frame);
+                    let upvalue = frame.closure.up_values[upvalue_index as usize];
+                    if upvalue.is_local {
+                        let stack_index = upvalue.index;
+                        let value = self.stack[stack_index].clone();
+                        self.stack.push(value)
+                    } else {
+                        panic!("Not yet implemented !");
+                    }
+                }
+                OpCode::OpSetUpValue => todo!(),
                 OpCode::OpEof => {
                     return Ok(());
                 }
