@@ -1,7 +1,8 @@
+// closed up value
 fun makeClosure(value) {
   fun closure() {
     print value;
-    }
+  }
   return closure;
 }
 

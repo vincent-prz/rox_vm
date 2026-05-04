@@ -1,0 +1,10 @@
+// open up value
+fun makeClosure() {
+  let value = "hello";
+  fun closure() {
+    print value;
+  }
+  closure();
+}
+
+makeClosure();
