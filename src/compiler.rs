@@ -301,7 +301,7 @@ impl Compiler {
         compiler.run(Program {
             declarations: decl.body,
         })?;
-        self.emit_closure(Value::Function(compiler.function));
+        self.emit_closure(&compiler.function);
         if self.scope_depth > 0 {
             self.add_local(decl.name)?;
         } else {
@@ -394,12 +394,17 @@ impl Compiler {
     }
 
     fn resolve_upvalue(&mut self, name: &Token) -> Option<usize> {
-        match &self.enclosing {
+        match &mut self.enclosing {
             Some(enclosing) => match enclosing.resolve_local(name) {
                 Some(index) => {
                     return Some(self.add_upvalue(index as u8, true));
                 }
-                None => None,
+                None => match enclosing.resolve_upvalue(name) {
+                    Some(index) => {
+                        return Some(self.add_upvalue(index as u8, false));
+                    }
+                    None => None,
+                },
             },
             None => None,
         }
@@ -445,9 +450,13 @@ impl Compiler {
         self.emit_bytes(OpCode::OpConstant as u8, constant);
     }
 
-    fn emit_closure(&mut self, value: Value) {
-        let constant = self.make_constant(value);
+    fn emit_closure(&mut self, function: &Function) {
+        let constant = self.make_constant(Value::Function(function.clone()));
         self.emit_bytes(OpCode::OpClosure as u8, constant);
+        for upvalue in &function.up_values {
+            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+            self.emit_byte(upvalue.index);
+        }
     }
 
     fn emit_return(&mut self) {

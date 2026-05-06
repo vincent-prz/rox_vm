@@ -230,7 +230,7 @@ impl Chunk {
             OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OpCode::OpLoop => self.jump_instruction("OP_LOOP", -1, offset),
             OpCode::OpCall => self.instruction_with_operand("OP_CALL", offset),
-            OpCode::OpClosure => self.constant_instruction("OP_CLOSURE", offset),
+            OpCode::OpClosure => self.closure(offset),
             OpCode::OpGetUpValue => self.instruction_with_operand("OP_GET_UPVALUE", offset),
             OpCode::OpSetUpValue => self.instruction_with_operand("OP_SET_UPVALUE", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
@@ -264,5 +264,35 @@ impl Chunk {
         print!("{}", self.constants[constant_addr as usize]);
         println!("'");
         offset + 2
+    }
+
+    fn closure(&self, offset: usize) -> usize {
+        let mut current_offset = offset;
+        let constant_addr = self.code[offset + 1];
+        print!("{:<16} {} '", "OP_CLOSURE", constant_addr);
+        let value = &self.constants[constant_addr as usize];
+        print!("{}", value);
+        println!("'");
+        current_offset += 2;
+        match value {
+            Value::Function(function) => {
+                for _ in &function.up_values {
+                    let is_local = self.code[current_offset];
+                    let index = self.code[current_offset + 1];
+                    println!(
+                        "{:04}    |{:<20} {} {}",
+                        current_offset,
+                        "",
+                        if is_local == 1 { "local" } else { "upvalue" },
+                        index
+                    );
+                    current_offset += 2;
+                }
+            }
+            _ => {
+                panic!("got unexpected value when disassembling closure {}", value)
+            }
+        }
+        current_offset
     }
 }

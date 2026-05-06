@@ -96,7 +96,6 @@ impl Closure {
 #[derive(Copy, Clone, PartialEq)]
 pub struct RuntimeUpValue {
     pub index: usize, // this will be the index on the stack
-    pub is_local: bool,
 }
 
 #[derive(Clone, PartialEq)]

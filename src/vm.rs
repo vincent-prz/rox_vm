@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::value::{
-    get_clock_native_func, Closure, Function, NativeFunction, RuntimeUpValue, Value,
+    get_clock_native_func, Closure, Function, NativeFunction, RuntimeUpValue, UpValue, Value,
 };
 
 pub struct VM {
@@ -81,7 +81,7 @@ impl VM {
                 //     None => String::from("<script>"),
                 // };
                 // print!("{}::", func_name);
-                self.get_chunk().disassemble_instruction(frame.ip);
+                self.get_chunk(frame).disassemble_instruction(frame.ip);
             }
             let instruction = self.read_byte(frame).try_into().unwrap();
             match instruction {
@@ -249,10 +249,9 @@ impl VM {
                             let current_closure = &mut closure.clone();
                             for upvalue in &current_closure.function.up_values {
                                 let stack_index = upvalue.index as usize + frame.slots_start_index;
-                                current_closure.up_values.push(RuntimeUpValue {
-                                    index: stack_index,
-                                    is_local: upvalue.is_local,
-                                });
+                                current_closure
+                                    .up_values
+                                    .push(RuntimeUpValue { index: stack_index });
                             }
 
                             let mut new_frame = CallFrame {
@@ -296,7 +295,19 @@ impl VM {
                     let function_value = self.read_constant(frame);
                     match function_value {
                         Value::Function(function) => {
-                            self.push(Value::Closure(Closure::new(function)));
+                            let mut closure = Closure::new(function.clone());
+                            for _ in function.up_values {
+                                let is_local = self.read_byte(frame);
+                                let index = self.read_byte(frame);
+                                if is_local == 1 {
+                                    closure.up_values.push(self.capture_up_value(index, frame));
+                                } else {
+                                    closure
+                                        .up_values
+                                        .push(frame.closure.up_values[index as usize]);
+                                }
+                            }
+                            self.push(Value::Closure(closure));
                         }
                         _ => panic!("Expected a function to wrap in closure"),
                     }
@@ -305,13 +316,9 @@ impl VM {
                     // TODO: check book implem
                     let upvalue_index = self.read_byte(frame);
                     let upvalue = frame.closure.up_values[upvalue_index as usize];
-                    if upvalue.is_local {
-                        let stack_index = upvalue.index;
-                        let value = self.stack[stack_index].clone();
-                        self.stack.push(value)
-                    } else {
-                        panic!("Not yet implemented !");
-                    }
+                    let stack_index = upvalue.index;
+                    let value = self.stack[stack_index].clone();
+                    self.stack.push(value)
                 }
                 OpCode::OpSetUpValue => todo!(),
                 OpCode::OpEof => {
@@ -357,6 +364,13 @@ impl VM {
         let usize_index: usize = index.into();
         let slots_start_index = frame.slots_start_index;
         self.stack[usize_index + slots_start_index].clone()
+    }
+
+    fn capture_up_value(&self, index: u8, frame: &CallFrame) -> RuntimeUpValue {
+        let usize_index: usize = index.into();
+        RuntimeUpValue {
+            index: frame.slots_start_index + usize_index,
+        }
     }
 
     fn reset_stack(&mut self) {
