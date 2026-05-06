@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::value::{
-    get_clock_native_func, Closure, Function, NativeFunction, RuntimeUpValue, UpValue, Value,
+    get_clock_native_func, Closure, Function, NativeFunction, RuntimeUpValue, Value,
 };
 
 pub struct VM {

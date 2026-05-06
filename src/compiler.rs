@@ -18,7 +18,7 @@ pub struct Compiler {
     scope_depth: u8,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Local {
     name: Token,
     depth: u8,
@@ -287,9 +287,7 @@ impl Compiler {
 
     fn fun_decl(&mut self, decl: FunDecl) -> Result<(), String> {
         let func_name = &decl.name.lexeme;
-        // we can clone self because of 2 assumptions:
-        // self don't need to be mutated by compilation of child
-        // we can tolerate the perf cost during compile time
+        // about the clone: we can tolerate the perf cost during compile time
         let mut compiler = Compiler::new(
             FunctionType::Function(decl.clone()),
             Some(Box::new(self.clone())),
@@ -307,6 +305,13 @@ impl Compiler {
         } else {
             let constant = self.make_constant(Value::Str(func_name.clone()));
             self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
+        }
+        // FIXME: this a hack. COmpilation of child function may have mutated self.function
+        // Since we cloned, we need to put back the mutation in the original self.
+        // Using arenas seems the way to go.
+        match compiler.enclosing {
+            Some(enclosing) => self.function = enclosing.function,
+            None => panic!("Unexpected case in function compilation"),
         }
         Ok(())
     }
