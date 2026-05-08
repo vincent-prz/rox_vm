@@ -35,6 +35,7 @@ pub enum OpCode {
     OpClosure,
     OpGetUpValue,
     OpSetUpValue,
+    OpCloseUpValue,
     OpEof,
 }
 
@@ -76,6 +77,7 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpClosure as u8 => Ok(OpCode::OpClosure),
             x if x == OpCode::OpGetUpValue as u8 => Ok(OpCode::OpGetUpValue),
             x if x == OpCode::OpSetUpValue as u8 => Ok(OpCode::OpSetUpValue),
+            x if x == OpCode::OpCloseUpValue as u8 => Ok(OpCode::OpCloseUpValue),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
@@ -233,6 +235,7 @@ impl Chunk {
             OpCode::OpClosure => self.closure(offset),
             OpCode::OpGetUpValue => self.instruction_with_operand("OP_GET_UPVALUE", offset),
             OpCode::OpSetUpValue => self.instruction_with_operand("OP_SET_UPVALUE", offset),
+            OpCode::OpCloseUpValue => self.simple_instruction("OP_CLOSE_UP_VALUE", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }

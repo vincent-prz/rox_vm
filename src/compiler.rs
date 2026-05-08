@@ -22,6 +22,7 @@ pub struct Compiler {
 struct Local {
     name: Token,
     depth: u8,
+    is_captured: bool,
 }
 
 // useful to distinguish real functions from implicit top level function
@@ -40,6 +41,7 @@ impl Compiler {
                 Local {
                     name: decl.name.clone(),
                     depth: 0,
+                    is_captured: false,
                 },
             ),
             FunctionType::Script => (
@@ -52,6 +54,7 @@ impl Compiler {
                         typ: TokenType::Fun,
                     },
                     depth: 0,
+                    is_captured: false,
                 },
             ),
         };
@@ -66,6 +69,15 @@ impl Compiler {
             scope_depth: 0,
             enclosing,
         }
+    }
+
+    fn copy_from(&mut self, source: Self) {
+        self.current_line = source.current_line;
+        self.function = source.function;
+        self.function_type = source.function_type;
+        self.locals = source.locals;
+        self.scope_depth = source.scope_depth;
+        self.enclosing = source.enclosing;
     }
 
     pub fn run(&mut self, program_ast: Program) -> Result<(), String> {
@@ -300,18 +312,20 @@ impl Compiler {
             declarations: decl.body,
         })?;
         self.emit_closure(&compiler.function);
+
+        let enclosing = compiler
+            .enclosing
+            .expect("Unexpected missing enclosing in function compilation");
+        // FIXME: this a hack. Compilation of child function may have mutated self.function
+        // Since we cloned, we need to put back the mutation in the original self.
+        // Using arenas seems the way to go.
+        self.copy_from(*enclosing);
+
         if self.scope_depth > 0 {
             self.add_local(decl.name)?;
         } else {
             let constant = self.make_constant(Value::Str(func_name.clone()));
             self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
-        }
-        // FIXME: this a hack. COmpilation of child function may have mutated self.function
-        // Since we cloned, we need to put back the mutation in the original self.
-        // Using arenas seems the way to go.
-        match compiler.enclosing {
-            Some(enclosing) => self.function = enclosing.function,
-            None => panic!("Unexpected case in function compilation"),
         }
         Ok(())
     }
@@ -320,7 +334,7 @@ impl Compiler {
         let local_index = self.resolve_local(&variable.name);
         match local_index {
             Some(index) => self.emit_bytes(OpCode::OpGetLocal as u8, index.try_into().unwrap()),
-            None => match self.resolve_upvalue(&variable.name) {
+            None => match self.resolve_up_value(&variable.name) {
                 Some(index) => {
                     self.emit_bytes(OpCode::OpGetUpValue as u8, index.try_into().unwrap());
                 }
@@ -353,18 +367,31 @@ impl Compiler {
         for decl in declarations {
             self.declaration(decl)?;
         }
-        self.scope_depth -= 1;
-        let mut nb_vars_to_pop: u8 = 0;
-        while self.locals.len() > 0 && self.locals[self.locals.len() - 1].depth > self.scope_depth {
-            self.locals.pop();
-            nb_vars_to_pop += 1;
-        }
-        if nb_vars_to_pop == 1 {
-            self.emit_byte(OpCode::OpPop as u8);
-        } else if nb_vars_to_pop > 1 {
-            self.emit_bytes(OpCode::OpPopN as u8, nb_vars_to_pop);
-        }
+        self.end_scope();
         Ok(())
+    }
+
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+        // let mut nb_vars_to_pop: u8 = 0;
+        while self.locals.len() > 0 && self.locals[self.locals.len() - 1].depth > self.scope_depth {
+            // we can unwrap sinced we checked self.locals is not empty
+            let local = self.locals.pop().unwrap();
+            if local.is_captured {
+                self.emit_byte(OpCode::OpCloseUpValue as u8);
+            } else {
+                self.emit_byte(OpCode::OpPop as u8);
+            }
+            // nb_vars_to_pop += 1;
+        }
+        // NOTE:not using OpPopN since we need to implement the counterpar for OpCloseUpValue
+        // letting the old code for reference
+
+        // if nb_vars_to_pop == 1 {
+        //     self.emit_byte(OpCode::OpPop as u8);
+        // } else if nb_vars_to_pop > 1 {
+        //     self.emit_bytes(OpCode::OpPopN as u8, nb_vars_to_pop);
+        // }
     }
 
     fn add_local(&mut self, name: Token) -> Result<(), String> {
@@ -383,6 +410,7 @@ impl Compiler {
         self.locals.push(Local {
             name,
             depth: self.scope_depth,
+            is_captured: false,
         });
         Ok(())
     }
@@ -398,15 +426,16 @@ impl Compiler {
         None
     }
 
-    fn resolve_upvalue(&mut self, name: &Token) -> Option<usize> {
+    fn resolve_up_value(&mut self, name: &Token) -> Option<usize> {
         match &mut self.enclosing {
             Some(enclosing) => match enclosing.resolve_local(name) {
                 Some(index) => {
-                    return Some(self.add_upvalue(index as u8, true));
+                    enclosing.locals[index].is_captured = true;
+                    return Some(self.add_up_value(index as u8, true));
                 }
-                None => match enclosing.resolve_upvalue(name) {
+                None => match enclosing.resolve_up_value(name) {
                     Some(index) => {
-                        return Some(self.add_upvalue(index as u8, false));
+                        return Some(self.add_up_value(index as u8, false));
                     }
                     None => None,
                 },
@@ -415,7 +444,7 @@ impl Compiler {
         }
     }
 
-    fn add_upvalue(&mut self, index: u8, is_local: bool) -> usize {
+    fn add_up_value(&mut self, index: u8, is_local: bool) -> usize {
         for (i, up_value) in self.function.up_values.iter().enumerate() {
             if up_value.index == index && up_value.is_local == is_local {
                 return i;

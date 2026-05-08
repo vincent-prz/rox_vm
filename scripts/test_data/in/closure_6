@@ -1,0 +1,9 @@
+let z = 0;
+{
+    let x = 42;
+    fun f() {
+        print x;
+    }
+    z = f;
+}
+z();

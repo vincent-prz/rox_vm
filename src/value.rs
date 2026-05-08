@@ -81,7 +81,7 @@ impl UpValue {
 #[derive(Clone, PartialEq)]
 pub struct Closure {
     pub function: Function,
-    pub up_values: Vec<RuntimeUpValue>,
+    pub up_values: Vec<Rc<RefCell<RuntimeUpValue>>>,
 }
 
 impl Closure {
@@ -93,9 +93,10 @@ impl Closure {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct RuntimeUpValue {
-    pub index: usize, // this will be the index on the stack
+#[derive(Clone, PartialEq)]
+pub enum RuntimeUpValue {
+    OpenUpValue(usize), // this will be the index on the stack
+    ClosedUpValue(Value),
 }
 
 #[derive(Clone, PartialEq)]

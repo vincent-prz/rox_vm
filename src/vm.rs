@@ -1,5 +1,6 @@
-use std::cell::Ref;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::value::{
@@ -11,6 +12,7 @@ pub struct VM {
     // [perf] should we used a fixed size array ?
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
+    open_up_values: Vec<Rc<RefCell<RuntimeUpValue>>>,
 }
 
 // NOTE - to retrieve the callframe function, we can use `stack[slots_start_index]`
@@ -53,6 +55,7 @@ impl VM {
         let mut vm = VM {
             stack: Vec::new(),
             globals: HashMap::new(),
+            open_up_values: Vec::new(),
         };
         vm.define_native(get_clock_native_func());
         vm
@@ -135,6 +138,7 @@ impl VM {
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean, frame),
                 OpCode::OpReturn => {
                     let result = self.pop();
+                    self.close_up_values(frame.slots_start_index);
                     // remove param arguments from the stack.
                     self.stack.truncate(frame.slots_start_index);
                     self.stack.push(result);
@@ -249,9 +253,9 @@ impl VM {
                             let current_closure = &mut closure.clone();
                             for upvalue in &current_closure.function.up_values {
                                 let stack_index = upvalue.index as usize + frame.slots_start_index;
-                                current_closure
-                                    .up_values
-                                    .push(RuntimeUpValue { index: stack_index });
+                                current_closure.up_values.push(Rc::new(RefCell::new(
+                                    RuntimeUpValue::OpenUpValue(stack_index),
+                                )));
                             }
 
                             let mut new_frame = CallFrame {
@@ -304,7 +308,7 @@ impl VM {
                                 } else {
                                     closure
                                         .up_values
-                                        .push(frame.closure.up_values[index as usize]);
+                                        .push(frame.closure.up_values[index as usize].clone());
                                 }
                             }
                             self.push(Value::Closure(closure));
@@ -315,12 +319,22 @@ impl VM {
                 OpCode::OpGetUpValue => {
                     // TODO: check book implem
                     let upvalue_index = self.read_byte(frame);
-                    let upvalue = frame.closure.up_values[upvalue_index as usize];
-                    let stack_index = upvalue.index;
-                    let value = self.stack[stack_index].clone();
-                    self.stack.push(value)
+                    let upvalue = frame.closure.up_values[upvalue_index as usize].clone();
+                    match &*upvalue.borrow() {
+                        RuntimeUpValue::ClosedUpValue(value) => {
+                            self.stack.push(value.clone());
+                        }
+                        RuntimeUpValue::OpenUpValue(stack_index) => {
+                            let value = self.stack[*stack_index].clone();
+                            self.stack.push(value)
+                        }
+                    };
                 }
                 OpCode::OpSetUpValue => todo!(),
+                OpCode::OpCloseUpValue => {
+                    self.close_up_values(self.stack.len() - 1);
+                    self.pop();
+                }
                 OpCode::OpEof => {
                     return Ok(());
                 }
@@ -366,11 +380,32 @@ impl VM {
         self.stack[usize_index + slots_start_index].clone()
     }
 
-    fn capture_up_value(&self, index: u8, frame: &CallFrame) -> RuntimeUpValue {
+    fn capture_up_value(&mut self, index: u8, frame: &CallFrame) -> Rc<RefCell<RuntimeUpValue>> {
         let usize_index: usize = index.into();
-        RuntimeUpValue {
-            index: frame.slots_start_index + usize_index,
+        let up_value = RuntimeUpValue::OpenUpValue(frame.slots_start_index + usize_index);
+        let up_value_ref = Rc::new(RefCell::new(up_value));
+        self.open_up_values.push(up_value_ref.clone());
+        up_value_ref
+    }
+
+    fn close_up_values(&mut self, stack_last_index: usize) {
+        let mut values_to_pop = 0;
+        for up_value in self.open_up_values.iter_mut().rev() {
+            let mut up_value_ref = up_value.borrow_mut();
+            match &*up_value_ref {
+                RuntimeUpValue::OpenUpValue(index) => {
+                    if *index < stack_last_index {
+                        break;
+                    }
+                    // FIXME: try to remove clone here
+                    *up_value_ref = RuntimeUpValue::ClosedUpValue(self.stack[*index].clone());
+                    values_to_pop += 1;
+                }
+                RuntimeUpValue::ClosedUpValue(_) => panic!("Unexpected closed value"),
+            }
         }
+        self.open_up_values
+            .truncate(self.open_up_values.len() - values_to_pop);
     }
 
     fn reset_stack(&mut self) {

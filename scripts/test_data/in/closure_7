@@ -1,0 +1,11 @@
+// closed up value
+fun makeClosure() {
+  let value = 42;
+  fun closure() {
+    print value;
+  }
+  return closure;
+}
+
+let closure = makeClosure();
+closure();
