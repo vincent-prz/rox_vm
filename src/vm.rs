@@ -249,7 +249,7 @@ impl VM {
                                     frame,
                                 ));
                             }
-                            // TODO: check with book impl
+                            // TODO: try to remove clone
                             let current_closure = &mut closure.clone();
                             for upvalue in &current_closure.function.up_values {
                                 let stack_index = upvalue.index as usize + frame.slots_start_index;

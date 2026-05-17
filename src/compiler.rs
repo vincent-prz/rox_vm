@@ -373,7 +373,6 @@ impl Compiler {
 
     fn end_scope(&mut self) {
         self.scope_depth -= 1;
-        // let mut nb_vars_to_pop: u8 = 0;
         while self.locals.len() > 0 && self.locals[self.locals.len() - 1].depth > self.scope_depth {
             // we can unwrap sinced we checked self.locals is not empty
             let local = self.locals.pop().unwrap();
