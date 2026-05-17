@@ -32,6 +32,10 @@ pub enum OpCode {
     OpJumpIfFalse,
     OpLoop,
     OpCall,
+    OpClosure,
+    OpGetUpValue,
+    OpSetUpValue,
+    OpCloseUpValue,
     OpEof,
 }
 
@@ -70,6 +74,10 @@ impl TryFrom<u8> for OpCode {
             x if x == OpCode::OpJumpIfFalse as u8 => Ok(OpCode::OpJumpIfFalse),
             x if x == OpCode::OpLoop as u8 => Ok(OpCode::OpLoop),
             x if x == OpCode::OpCall as u8 => Ok(OpCode::OpCall),
+            x if x == OpCode::OpClosure as u8 => Ok(OpCode::OpClosure),
+            x if x == OpCode::OpGetUpValue as u8 => Ok(OpCode::OpGetUpValue),
+            x if x == OpCode::OpSetUpValue as u8 => Ok(OpCode::OpSetUpValue),
+            x if x == OpCode::OpCloseUpValue as u8 => Ok(OpCode::OpCloseUpValue),
             x if x == OpCode::OpEof as u8 => Ok(OpCode::OpEof),
             _ => Err(()),
         }
@@ -224,6 +232,10 @@ impl Chunk {
             OpCode::OpJumpIfFalse => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OpCode::OpLoop => self.jump_instruction("OP_LOOP", -1, offset),
             OpCode::OpCall => self.instruction_with_operand("OP_CALL", offset),
+            OpCode::OpClosure => self.closure(offset),
+            OpCode::OpGetUpValue => self.instruction_with_operand("OP_GET_UPVALUE", offset),
+            OpCode::OpSetUpValue => self.instruction_with_operand("OP_SET_UPVALUE", offset),
+            OpCode::OpCloseUpValue => self.simple_instruction("OP_CLOSE_UP_VALUE", offset),
             OpCode::OpEof => self.simple_instruction("OP_EOF", offset),
         }
     }
@@ -255,5 +267,35 @@ impl Chunk {
         print!("{}", self.constants[constant_addr as usize]);
         println!("'");
         offset + 2
+    }
+
+    fn closure(&self, offset: usize) -> usize {
+        let mut current_offset = offset;
+        let constant_addr = self.code[offset + 1];
+        print!("{:<16} {} '", "OP_CLOSURE", constant_addr);
+        let value = &self.constants[constant_addr as usize];
+        print!("{}", value);
+        println!("'");
+        current_offset += 2;
+        match value {
+            Value::Function(function) => {
+                for _ in &function.up_values {
+                    let is_local = self.code[current_offset];
+                    let index = self.code[current_offset + 1];
+                    println!(
+                        "{:04}    |{:<20} {} {}",
+                        current_offset,
+                        "",
+                        if is_local == 1 { "local" } else { "upvalue" },
+                        index
+                    );
+                    current_offset += 2;
+                }
+            }
+            _ => {
+                panic!("got unexpected value when disassembling closure {}", value)
+            }
+        }
+        current_offset
     }
 }

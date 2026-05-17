@@ -1,0 +1,12 @@
+// nested open up value
+fun makeClosure(value) {
+  fun outer() {
+    fun closure() {
+        print value;
+    }
+    closure();
+  }  
+  outer();
+}
+
+makeClosure("hello");

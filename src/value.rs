@@ -13,6 +13,7 @@ pub enum Value {
     Boolean(bool),
     Str(String),
     Function(Function),
+    Closure(Closure),
     NativeFunction(NativeFunction),
 }
 
@@ -23,6 +24,7 @@ impl fmt::Display for Value {
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
             Value::Function(function) => write!(f, "<fn {}>", function.name),
+            Value::Closure(closure) => write!(f, "<fn {}>", closure.function.name),
             Value::NativeFunction(function) => write!(f, "<fn {}>", function.name),
         }
     }
@@ -35,6 +37,7 @@ impl Value {
             Value::Boolean(b) => !b,
             Value::Str(s) => s == "",
             Value::Function(_) => false,
+            Value::Closure(_) => false,
             Value::NativeFunction(_) => false,
         }
     }
@@ -49,6 +52,7 @@ pub struct Function {
     pub arity: usize,
     pub chunk: Rc<RefCell<Chunk>>,
     pub name: String,
+    pub up_values: Vec<UpValue>,
 }
 
 impl Function {
@@ -57,8 +61,42 @@ impl Function {
             arity,
             name,
             chunk: Rc::new(RefCell::new(Chunk::new())),
+            up_values: vec![],
         }
     }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct UpValue {
+    pub index: u8,
+    pub is_local: bool,
+}
+
+impl UpValue {
+    pub fn new(index: u8, is_local: bool) -> Self {
+        UpValue { index, is_local }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Closure {
+    pub function: Function,
+    pub up_values: Vec<Rc<RefCell<RuntimeUpValue>>>,
+}
+
+impl Closure {
+    pub fn new(function: Function) -> Self {
+        Closure {
+            function,
+            up_values: vec![],
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub enum RuntimeUpValue {
+    OpenUpValue(usize), // this will be the index on the stack
+    ClosedUpValue(Value),
 }
 
 #[derive(Clone, PartialEq)]

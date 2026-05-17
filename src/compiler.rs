@@ -6,9 +6,11 @@ use crate::ast::{
 };
 use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
-use crate::value::{Function, Value};
+use crate::value::{Function, UpValue, Value};
 
+#[derive(Clone)]
 pub struct Compiler {
+    enclosing: Option<Box<Compiler>>,
     current_line: u16,
     pub function: Function,
     function_type: FunctionType,
@@ -16,19 +18,22 @@ pub struct Compiler {
     scope_depth: u8,
 }
 
+#[derive(Clone, Debug)]
 struct Local {
     name: Token,
     depth: u8,
+    is_captured: bool,
 }
 
 // useful to distinguish real functions from implicit top level function
+#[derive(Clone)]
 pub enum FunctionType {
     Function(FunDecl),
     Script,
 }
 
 impl Compiler {
-    pub fn new(function_type: FunctionType) -> Self {
+    pub fn new(function_type: FunctionType, enclosing: Option<Box<Compiler>>) -> Self {
         let (func_name, arity, func_local) = match &function_type {
             FunctionType::Function(decl) => (
                 decl.name.lexeme.clone(),
@@ -36,6 +41,7 @@ impl Compiler {
                 Local {
                     name: decl.name.clone(),
                     depth: 0,
+                    is_captured: false,
                 },
             ),
             FunctionType::Script => (
@@ -48,6 +54,7 @@ impl Compiler {
                         typ: TokenType::Fun,
                     },
                     depth: 0,
+                    is_captured: false,
                 },
             ),
         };
@@ -60,7 +67,17 @@ impl Compiler {
             // TODO: initialize locals like in page 438
             locals: vec![func_local],
             scope_depth: 0,
+            enclosing,
         }
+    }
+
+    fn copy_from(&mut self, source: Self) {
+        self.current_line = source.current_line;
+        self.function = source.function;
+        self.function_type = source.function_type;
+        self.locals = source.locals;
+        self.scope_depth = source.scope_depth;
+        self.enclosing = source.enclosing;
     }
 
     pub fn run(&mut self, program_ast: Program) -> Result<(), String> {
@@ -282,7 +299,11 @@ impl Compiler {
 
     fn fun_decl(&mut self, decl: FunDecl) -> Result<(), String> {
         let func_name = &decl.name.lexeme;
-        let mut compiler = Compiler::new(FunctionType::Function(decl.clone()));
+        // about the clone: we can tolerate the perf cost during compile time
+        let mut compiler = Compiler::new(
+            FunctionType::Function(decl.clone()),
+            Some(Box::new(self.clone())),
+        );
         compiler.scope_depth += 1;
         for param in decl.params {
             compiler.add_local(param)?;
@@ -290,13 +311,22 @@ impl Compiler {
         compiler.run(Program {
             declarations: decl.body,
         })?;
-        self.emit_constant(Value::Function(compiler.function));
+        self.emit_closure(&compiler.function);
+
+        let enclosing = compiler
+            .enclosing
+            .expect("Unexpected missing enclosing in function compilation");
+        // FIXME: this a hack. Compilation of child function may have mutated self.function
+        // Since we cloned, we need to put back the mutation in the original self.
+        // Using arenas seems the way to go.
+        self.copy_from(*enclosing);
+
         if self.scope_depth > 0 {
             self.add_local(decl.name)?;
-            return Ok(());
+        } else {
+            let constant = self.make_constant(Value::Str(func_name.clone()));
+            self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         }
-        let constant = self.make_constant(Value::Str(func_name.clone()));
-        self.emit_bytes(OpCode::OpDefineGlobal as u8, constant);
         Ok(())
     }
 
@@ -304,10 +334,15 @@ impl Compiler {
         let local_index = self.resolve_local(&variable.name);
         match local_index {
             Some(index) => self.emit_bytes(OpCode::OpGetLocal as u8, index.try_into().unwrap()),
-            None => {
-                let constant = self.make_constant(Value::Str(variable.name.lexeme));
-                self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
-            }
+            None => match self.resolve_up_value(&variable.name) {
+                Some(index) => {
+                    self.emit_bytes(OpCode::OpGetUpValue as u8, index.try_into().unwrap());
+                }
+                None => {
+                    let constant = self.make_constant(Value::Str(variable.name.lexeme));
+                    self.emit_bytes(OpCode::OpGetGlobal as u8, constant);
+                }
+            },
         };
         Ok(())
     }
@@ -332,18 +367,30 @@ impl Compiler {
         for decl in declarations {
             self.declaration(decl)?;
         }
-        self.scope_depth -= 1;
-        let mut nb_vars_to_pop: u8 = 0;
-        while self.locals.len() > 0 && self.locals[self.locals.len() - 1].depth > self.scope_depth {
-            self.locals.pop();
-            nb_vars_to_pop += 1;
-        }
-        if nb_vars_to_pop == 1 {
-            self.emit_byte(OpCode::OpPop as u8);
-        } else if nb_vars_to_pop > 1 {
-            self.emit_bytes(OpCode::OpPopN as u8, nb_vars_to_pop);
-        }
+        self.end_scope();
         Ok(())
+    }
+
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+        while self.locals.len() > 0 && self.locals[self.locals.len() - 1].depth > self.scope_depth {
+            // we can unwrap sinced we checked self.locals is not empty
+            let local = self.locals.pop().unwrap();
+            if local.is_captured {
+                self.emit_byte(OpCode::OpCloseUpValue as u8);
+            } else {
+                self.emit_byte(OpCode::OpPop as u8);
+            }
+            // nb_vars_to_pop += 1;
+        }
+        // NOTE:not using OpPopN since we need to implement the counterpar for OpCloseUpValue
+        // letting the old code for reference
+
+        // if nb_vars_to_pop == 1 {
+        //     self.emit_byte(OpCode::OpPop as u8);
+        // } else if nb_vars_to_pop > 1 {
+        //     self.emit_bytes(OpCode::OpPopN as u8, nb_vars_to_pop);
+        // }
     }
 
     fn add_local(&mut self, name: Token) -> Result<(), String> {
@@ -362,6 +409,7 @@ impl Compiler {
         self.locals.push(Local {
             name,
             depth: self.scope_depth,
+            is_captured: false,
         });
         Ok(())
     }
@@ -375,6 +423,34 @@ impl Compiler {
             }
         }
         None
+    }
+
+    fn resolve_up_value(&mut self, name: &Token) -> Option<usize> {
+        match &mut self.enclosing {
+            Some(enclosing) => match enclosing.resolve_local(name) {
+                Some(index) => {
+                    enclosing.locals[index].is_captured = true;
+                    return Some(self.add_up_value(index as u8, true));
+                }
+                None => match enclosing.resolve_up_value(name) {
+                    Some(index) => {
+                        return Some(self.add_up_value(index as u8, false));
+                    }
+                    None => None,
+                },
+            },
+            None => None,
+        }
+    }
+
+    fn add_up_value(&mut self, index: u8, is_local: bool) -> usize {
+        for (i, up_value) in self.function.up_values.iter().enumerate() {
+            if up_value.index == index && up_value.is_local == is_local {
+                return i;
+            }
+        }
+        self.function.up_values.push(UpValue::new(index, is_local));
+        self.function.up_values.len() - 1
     }
 
     fn current_chunk(&mut self) -> RefMut<Chunk> {
@@ -405,6 +481,15 @@ impl Compiler {
     fn emit_constant(&mut self, value: Value) {
         let constant = self.make_constant(value);
         self.emit_bytes(OpCode::OpConstant as u8, constant);
+    }
+
+    fn emit_closure(&mut self, function: &Function) {
+        let constant = self.make_constant(Value::Function(function.clone()));
+        self.emit_bytes(OpCode::OpClosure as u8, constant);
+        for upvalue in &function.up_values {
+            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+            self.emit_byte(upvalue.index);
+        }
     }
 
     fn emit_return(&mut self) {

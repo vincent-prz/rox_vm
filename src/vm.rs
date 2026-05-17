@@ -1,20 +1,24 @@
-use std::cell::Ref;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::chunk::{Chunk, OpCode};
-use crate::value::{get_clock_native_func, Function, NativeFunction, Value};
+use crate::value::{
+    get_clock_native_func, Closure, Function, NativeFunction, RuntimeUpValue, Value,
+};
 
 pub struct VM {
     // [perf] likewise, using stack.len() instead of a pointer to keep track of the top.
     // [perf] should we used a fixed size array ?
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
+    open_up_values: Vec<Rc<RefCell<RuntimeUpValue>>>,
 }
 
 // NOTE - to retrieve the callframe function, we can use `stack[slots_start_index]`
 // this avoids the need to have a `function` field and tricky lifetime issues
 struct CallFrame<'a> {
-    function: &'a Function,
+    closure: &'a Closure,
     // NOTE - [perf] not really an instruction pointer as in the book, but a mere counter
     // This is in order to avoid using unsafe Rust. TODO: benchmark
     ip: usize,
@@ -22,9 +26,9 @@ struct CallFrame<'a> {
 }
 
 impl<'a> CallFrame<'a> {
-    const fn new(function: &'a Function, ip: usize, slots_start_index: usize) -> Self {
+    const fn new(closure: &'a Closure, ip: usize, slots_start_index: usize) -> Self {
         CallFrame {
-            function,
+            closure,
             ip,
             slots_start_index,
         }
@@ -51,14 +55,16 @@ impl VM {
         let mut vm = VM {
             stack: Vec::new(),
             globals: HashMap::new(),
+            open_up_values: Vec::new(),
         };
         vm.define_native(get_clock_native_func());
         vm
     }
 
     pub fn interpret(&mut self, script_function: Function) -> Result<(), RuntimeError> {
-        self.stack.push(Value::Function(script_function.clone()));
-        let mut first_frame = CallFrame::new(&script_function, 0, 0);
+        let script_closure = Closure::new(script_function.clone());
+        self.stack.push(Value::Closure(script_closure.clone()));
+        let mut first_frame = CallFrame::new(&script_closure, 0, 0);
         self.run_callframe(&mut first_frame)
     }
 
@@ -78,7 +84,7 @@ impl VM {
                 //     None => String::from("<script>"),
                 // };
                 // print!("{}::", func_name);
-                self.get_chunk().disassemble_instruction(frame.ip);
+                self.get_chunk(frame).disassemble_instruction(frame.ip);
             }
             let instruction = self.read_byte(frame).try_into().unwrap();
             match instruction {
@@ -132,6 +138,7 @@ impl VM {
                 OpCode::OpGreaterEqual => binary_op!(self, >=, Value::Boolean, frame),
                 OpCode::OpReturn => {
                     let result = self.pop();
+                    self.close_up_values(frame.slots_start_index);
                     // remove param arguments from the stack.
                     self.stack.truncate(frame.slots_start_index);
                     self.stack.push(result);
@@ -231,19 +238,28 @@ impl VM {
                     let nb_args = self.read_byte(frame);
                     let callee = self.peek(nb_args as usize);
                     match callee {
-                        Value::Function(function) => {
-                            let arity = function.arity;
+                        Value::Closure(closure) => {
+                            let arity = closure.function.arity;
                             if arity != nb_args as usize {
                                 return Err(self.runtime_error(
                                     format!(
                                         "Expected {} arguments for {}, received {}",
-                                        arity, function.name, nb_args
+                                        arity, closure.function.name, nb_args
                                     ),
                                     frame,
                                 ));
                             }
+                            // TODO: try to remove clone
+                            let current_closure = &mut closure.clone();
+                            for upvalue in &current_closure.function.up_values {
+                                let stack_index = upvalue.index as usize + frame.slots_start_index;
+                                current_closure.up_values.push(Rc::new(RefCell::new(
+                                    RuntimeUpValue::OpenUpValue(stack_index),
+                                )));
+                            }
+
                             let mut new_frame = CallFrame {
-                                function: &function.clone(),
+                                closure: current_closure,
                                 ip: 0,
                                 // Subtle: the `- arity` part is for the overlapping of callframes
                                 // windows on the stack, see 24.5.1. - 1 is for the slot reserved for the function itself
@@ -279,6 +295,46 @@ impl VM {
                         }
                     }
                 }
+                OpCode::OpClosure => {
+                    let function_value = self.read_constant(frame);
+                    match function_value {
+                        Value::Function(function) => {
+                            let mut closure = Closure::new(function.clone());
+                            for _ in function.up_values {
+                                let is_local = self.read_byte(frame);
+                                let index = self.read_byte(frame);
+                                if is_local == 1 {
+                                    closure.up_values.push(self.capture_up_value(index, frame));
+                                } else {
+                                    closure
+                                        .up_values
+                                        .push(frame.closure.up_values[index as usize].clone());
+                                }
+                            }
+                            self.push(Value::Closure(closure));
+                        }
+                        _ => panic!("Expected a function to wrap in closure"),
+                    }
+                }
+                OpCode::OpGetUpValue => {
+                    // TODO: check book implem
+                    let upvalue_index = self.read_byte(frame);
+                    let upvalue = frame.closure.up_values[upvalue_index as usize].clone();
+                    match &*upvalue.borrow() {
+                        RuntimeUpValue::ClosedUpValue(value) => {
+                            self.stack.push(value.clone());
+                        }
+                        RuntimeUpValue::OpenUpValue(stack_index) => {
+                            let value = self.stack[*stack_index].clone();
+                            self.stack.push(value)
+                        }
+                    };
+                }
+                OpCode::OpSetUpValue => todo!(),
+                OpCode::OpCloseUpValue => {
+                    self.close_up_values(self.stack.len() - 1);
+                    self.pop();
+                }
                 OpCode::OpEof => {
                     return Ok(());
                 }
@@ -287,7 +343,7 @@ impl VM {
     }
 
     fn get_chunk<'a>(&self, frame: &CallFrame<'a>) -> Ref<'a, Chunk> {
-        frame.function.chunk.borrow()
+        frame.closure.function.chunk.borrow()
     }
 
     fn read_byte(&mut self, frame: &mut CallFrame) -> u8 {
@@ -322,6 +378,34 @@ impl VM {
         let usize_index: usize = index.into();
         let slots_start_index = frame.slots_start_index;
         self.stack[usize_index + slots_start_index].clone()
+    }
+
+    fn capture_up_value(&mut self, index: u8, frame: &CallFrame) -> Rc<RefCell<RuntimeUpValue>> {
+        let usize_index: usize = index.into();
+        let up_value = RuntimeUpValue::OpenUpValue(frame.slots_start_index + usize_index);
+        let up_value_ref = Rc::new(RefCell::new(up_value));
+        self.open_up_values.push(up_value_ref.clone());
+        up_value_ref
+    }
+
+    fn close_up_values(&mut self, stack_last_index: usize) {
+        let mut values_to_pop = 0;
+        for up_value in self.open_up_values.iter_mut().rev() {
+            let mut up_value_ref = up_value.borrow_mut();
+            match &*up_value_ref {
+                RuntimeUpValue::OpenUpValue(index) => {
+                    if *index < stack_last_index {
+                        break;
+                    }
+                    // FIXME: try to remove clone here
+                    *up_value_ref = RuntimeUpValue::ClosedUpValue(self.stack[*index].clone());
+                    values_to_pop += 1;
+                }
+                RuntimeUpValue::ClosedUpValue(_) => panic!("Unexpected closed value"),
+            }
+        }
+        self.open_up_values
+            .truncate(self.open_up_values.len() - values_to_pop);
     }
 
     fn reset_stack(&mut self) {

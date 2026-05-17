@@ -1,0 +1,13 @@
+// nested open up value
+fun makeClosure() {
+  let value = "hello";
+  fun outer() {
+    fun closure() {
+        print value;
+    }
+    closure();
+  }  
+  outer();
+}
+
+makeClosure();

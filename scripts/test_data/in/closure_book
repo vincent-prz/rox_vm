@@ -1,0 +1,17 @@
+fun outer() {
+    let x = "value";
+
+    fun middle() {
+        fun inner() {
+            print x;
+        }
+        print "create inner closure";
+        return inner;
+    }
+    print "return from outer";
+    return middle;
+}
+
+let mid = outer();
+let in = mid();
+in();

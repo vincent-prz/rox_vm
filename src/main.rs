@@ -69,7 +69,7 @@ fn run(source: String) {
         exit(65);
     }
 
-    let mut compiler = Compiler::new(FunctionType::Script);
+    let mut compiler = Compiler::new(FunctionType::Script, None);
     let compilation_result = compiler.run(program_ast.expect("Expected successful parse"));
     if let Err(err) = compilation_result {
         println!("{}", err);
